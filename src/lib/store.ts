@@ -14,6 +14,7 @@ import { CITIES, DEPARTURE_PRESETS, getCity } from "./seed";
 import type {
   CityPhoto,
   CityRecord,
+  HorrorSpot,
   Mission,
   Rarity,
   Trip,
@@ -52,8 +53,12 @@ interface MorgoState {
   completeTrip: (tripId: string) => void;
   /** 도착 룰렛 결과를 여행 미션으로 추가 */
   addTripMission: (tripId: string, mission: Mission) => void;
-  /** AI가 생성한 시작 미션 세트를 저장 (공개 화면 마운트 시 1회) */
-  setTripMissions: (tripId: string, missions: TripMission[]) => void;
+  /** AI가 생성한 시작 미션 세트를 저장 (공개 화면 마운트 시 1회). 공포 모드면 spot도 함께 저장 */
+  setTripMissions: (
+    tripId: string,
+    missions: TripMission[],
+    horrorSpot?: HorrorSpot,
+  ) => void;
   /** 미션 사진 제출 (Phase 5: 시뮬레이션 판정) */
   submitMission: (
     tripId: string,
@@ -251,11 +256,11 @@ export const useMorgo = create<MorgoState>()(
         });
       },
 
-      setTripMissions: (tripId, missions) =>
+      setTripMissions: (tripId, missions, horrorSpot) =>
         set({
           trips: get().trips.map((t) =>
             t.id === tripId && !(t.missions && t.missions.length > 0)
-              ? { ...t, missions }
+              ? { ...t, missions, horrorSpot }
               : t,
           ),
         }),

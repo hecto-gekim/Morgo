@@ -24,6 +24,11 @@ interface Challenge {
   category: "DARE" | "PLACE" | "HORROR";
 }
 
+interface HorrorSpotRaw {
+  name: string;
+  description: string;
+}
+
 export async function POST(request: Request) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return Response.json({ configured: false });
@@ -59,8 +64,15 @@ export async function POST(request: Request) {
     `- 참고: 대표 명소 ${body.landmark ?? "?"}, 지역 음식 ${body.food ?? "?"}\n` +
     `- 제목은 후킹되게 도발적으로, 설명은 클릭베이트 예능 자막처럼 쓸 것. 뻔한 "인증샷 찍기" 금지\n` +
     (exclude.length ? `- 다음 제목들과 겹치지 않게: ${exclude.join(", ")}\n` : "") +
-    `\n각 챌린지는 아래 JSON 배열로만 답해(다른 설명 문장 없이):\n` +
-    `[{"title":"짧고 자극적인 제목","description":"예능 자막 톤 한 문장","emoji":"이모지 1개","points":15~35 정수,"category":"DARE 또는 PLACE 또는 HORROR"}]`;
+    (horror
+      ? `\n추가로: 구글 검색으로 "${body.city}"에서 최근 화제이거나 유명한, 실존하는 공포·괴담 명소를 딱 1곳 찾아서 spot 필드에 담아줘.\n` +
+        `(예: 저수지, 폐터널, 옛 병원 부지처럼 실제 지명. 검색으로 못 찾으면 이 지역에서 가장 잘 알려진 괴담 장소로.)\n` +
+        `spot.description은 왜 무서운지/무슨 소문이 있는지 1~2문장으로.\n`
+      : "") +
+    `\n아래 JSON 객체 하나로만 답해(다른 설명 문장 없이):\n` +
+    `{"challenges":[{"title":"짧고 자극적인 제목","description":"예능 자막 톤 한 문장","emoji":"이모지 1개","points":15~35 정수,"category":"DARE 또는 PLACE 또는 HORROR"}]` +
+    (horror ? `,"spot":{"name":"명소 이름","description":"1~2문장 설명"}` : "") +
+    `}`;
 
   const r = await callGemini(apiKey, [{ text: prompt }], {
     search: true,
@@ -74,14 +86,17 @@ export async function POST(request: Request) {
     );
   }
 
-  const arrMatch = r.text.match(/\[[\s\S]*\]/);
-  if (!arrMatch) {
+  const objMatch = r.text.match(/\{[\s\S]*\}/);
+  if (!objMatch) {
     return Response.json({ error: "unparseable", raw: r.text.slice(0, 300) }, { status: 502 });
   }
 
   try {
-    const raw = JSON.parse(arrMatch[0]) as Challenge[];
-    const challenges = raw
+    const raw = JSON.parse(objMatch[0]) as {
+      challenges?: Challenge[];
+      spot?: HorrorSpotRaw;
+    };
+    const challenges = (raw.challenges ?? [])
       .filter((c) => c?.title && c?.description)
       .map((c) => ({
         title: String(c.title).slice(0, 40),
@@ -91,7 +106,14 @@ export async function POST(request: Request) {
         category:
           c.category === "PLACE" || c.category === "HORROR" ? c.category : "DARE",
       }));
-    return Response.json({ configured: true, challenges });
+    const spot =
+      horror && raw.spot?.name && raw.spot?.description
+        ? {
+            name: String(raw.spot.name).slice(0, 40),
+            description: String(raw.spot.description).slice(0, 160),
+          }
+        : undefined;
+    return Response.json({ configured: true, challenges, spot });
   } catch {
     return Response.json({ error: "parse_failed", raw: r.text.slice(0, 300) }, { status: 502 });
   }

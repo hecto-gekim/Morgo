@@ -1,7 +1,7 @@
 // 서버 전용 Gemini(Google AI Studio) 호출 헬퍼.
 // 키는 GEMINI_API_KEY 환경변수로만 사용한다(명세서 24 보안).
 
-const GEMINI_MODEL = process.env.MORGO_GEMINI_MODEL ?? "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.MORGO_GEMINI_MODEL ?? "gemini-3.5-flash";
 
 export interface GeminiPart {
   text?: string;
