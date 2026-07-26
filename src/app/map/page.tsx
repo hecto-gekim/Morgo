@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
-import KoreaMap, { type Region } from "@/components/KoreaMap";
+import KoreaMap from "@/components/KoreaMap";
 import { fileToThumbDataUrl } from "@/lib/image";
-import { getCity, getCityByCode, getCityExtra } from "@/lib/seed";
+import { cityLabel, getCity, getCityByCode, getCityExtra } from "@/lib/seed";
 import { useMorgo } from "@/lib/store";
+import { useKoreaRegions } from "@/lib/useKoreaRegions";
 import type { CityRecord } from "@/lib/types";
 
 export default function MapPage() {
@@ -24,22 +25,11 @@ function regionKeyOf(code: string): string {
 function MapContent() {
   const cityRecords = useMorgo((s) => s.cityRecords);
   const trips = useMorgo((s) => s.trips);
-  const [regions, setRegions] = useState<Region[] | null>(null);
+  const horrorMode = useMorgo((s) => s.horrorMode);
+  const regions = useKoreaRegions();
   const [selected, setSelected] = useState<{ code: string; name: string } | null>(
     null,
   );
-
-  // 폴리곤 데이터는 런타임에 fetch (번들 크기 절감)
-  useEffect(() => {
-    let alive = true;
-    fetch("/korea-sigungu.json")
-      .then((r) => r.json())
-      .then((data: Region[]) => alive && setRegions(data))
-      .catch(() => alive && setRegions([]));
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   // 공개(REVEALED) 이후 여행 중인 도시만 강조 (명세서 16.3)
   const activeTrip = trips.find((t) =>
@@ -76,6 +66,7 @@ function MapContent() {
             activeCode={activeCode}
             selectedCode={selected?.code}
             onSelect={(code, name) => setSelected({ code, name })}
+            horror={horrorMode}
           />
         ) : (
           <div className="grid aspect-[100/138] place-items-center text-sm text-morgo-navy/40">
@@ -181,7 +172,7 @@ function CitySheet({
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-xl font-extrabold">
-              {city ? `${city.provinceName} ${city.name}` : name}
+              {city ? cityLabel(city) : name}
             </h2>
             {extra ? (
               <p className="mt-0.5 text-sm text-morgo-navy/60">

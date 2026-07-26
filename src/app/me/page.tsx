@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import { totalEarnedPoints } from "@/lib/logic";
 import { useMorgo } from "@/lib/store";
 
 export default function MePage() {
@@ -19,12 +20,11 @@ function MeContent() {
   const trips = useMorgo((s) => s.trips);
   const cityRecords = useMorgo((s) => s.cityRecords);
   const logout = useMorgo((s) => s.logout);
+  const horrorMode = useMorgo((s) => s.horrorMode);
+  const toggleHorrorMode = useMorgo((s) => s.toggleHorrorMode);
 
   const visitedCount = Object.keys(cityRecords).length;
-  const points = trips
-    .flatMap((t) => t.missions ?? [])
-    .filter((m) => m.status === "PASSED")
-    .reduce((n, m) => n + m.mission.points, 0);
+  const points = totalEarnedPoints(trips);
 
   return (
     <div>
@@ -39,9 +39,21 @@ function MeContent() {
         />
         <div>
           <div className="font-bold">{user.nickname}</div>
-          <div className="text-sm text-morgo-navy/55">{user.email}</div>
+          <div className="text-sm text-morgo-navy/55">
+            {user.isGuest ? "게스트로 둘러보는 중" : user.email}
+          </div>
         </div>
       </div>
+
+      {user.isGuest && (
+        <button
+          type="button"
+          onClick={() => router.push("/login")}
+          className="mt-3 w-full rounded-xl bg-morgo-navy py-3.5 font-bold text-white active:bg-morgo-navy-deep"
+        >
+          로그인하고 내 정보 저장하기
+        </button>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
         <MeStat value={trips.length} label="만든 여행" />
@@ -55,16 +67,29 @@ function MeContent() {
 
       <button
         type="button"
+        onClick={toggleHorrorMode}
+        className={`mt-6 flex w-full items-center justify-between rounded-xl px-4 py-3.5 font-bold ${
+          horrorMode
+            ? "bg-morgo-navy text-morgo-yellow"
+            : "border border-morgo-navy/15 bg-morgo-card text-morgo-navy/70"
+        }`}
+      >
+        <span>😱 공포 모드</span>
+        <span className="text-sm font-semibold">{horrorMode ? "ON · 끄기" : "OFF · 켜기"}</span>
+      </button>
+
+      <button
+        type="button"
         onClick={() => {
           logout();
           router.replace("/login");
         }}
-        className="mt-6 w-full rounded-xl border border-morgo-navy/15 bg-morgo-card py-3.5 font-semibold text-morgo-navy/70"
+        className="mt-2 w-full rounded-xl border border-morgo-navy/15 bg-morgo-card py-3.5 font-semibold text-morgo-navy/70"
       >
         로그아웃
       </button>
       <p className="mt-4 text-center text-[11px] text-morgo-navy/40">
-        Morgo 알파 버전 · 테스트 예약 전용
+        Morgo 알파 버전 · 테스트 중
       </p>
     </div>
   );

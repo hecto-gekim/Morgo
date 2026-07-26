@@ -15,8 +15,13 @@ export default function LoginPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (hydrated && user) router.replace("/");
+    if (hydrated && user && !user.isGuest) router.replace("/");
   }, [hydrated, user, router]);
+
+  const skip = () => {
+    login({ email: "", nickname: "게스트", isGuest: true });
+    router.replace("/");
+  };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +33,7 @@ export default function LoginPage() {
       setError("닉네임을 입력해 주세요.");
       return;
     }
-    login({ email, nickname: nickname.trim() });
+    login({ email, nickname: nickname.trim(), isGuest: false });
     router.replace("/");
   };
 
@@ -40,13 +45,13 @@ export default function LoginPage() {
             Morgo<span className="text-3xl">📍</span>
           </h1>
           <p className="mt-1 text-sm font-semibold text-morgo-navy/60">
-            어디로 떠날지, 모르고 떠나는 설레는 여행
+            핀 던지면 그냥 가는 거임. 각오하고 들어와
           </p>
           <Image
             src="/character/hero.png"
             alt="모로고 캐릭터"
             width={230}
-            height={258}
+            height={320}
             priority
             className="mx-auto mt-4"
           />
@@ -101,6 +106,14 @@ export default function LoginPage() {
             알파 버전 — 이메일 인증 없이 로그인됩니다.
           </p>
         </form>
+
+        <button
+          type="button"
+          onClick={skip}
+          className="mt-3 w-full py-2 text-center text-sm font-semibold text-morgo-navy/50"
+        >
+          나중에 할게요 · 건너뛰고 둘러보기
+        </button>
       </div>
     </div>
   );

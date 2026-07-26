@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { generateChallenges } from "@/lib/roulette-ai";
 import { ROULETTE_FACES, spinRoulette } from "@/lib/seed";
+import { useMorgo } from "@/lib/store";
 import { MISSION_CATEGORY_LABELS, type Mission } from "@/lib/types";
 
 type Phase = "idle" | "spinning" | "result";
@@ -22,6 +23,7 @@ export default function Roulette({
   excludeTitles?: string[];
   onAccept: (mission: Mission) => void;
 }) {
+  const horrorMode = useMorgo((s) => s.horrorMode);
   const [phase, setPhase] = useState<Phase>("idle");
   const [face, setFace] = useState(ROULETTE_FACES[0]);
   const [result, setResult] = useState<Mission | null>(null);
@@ -39,6 +41,7 @@ export default function Roulette({
         cityId,
         [...used.current].slice(-40),
         10,
+        horrorMode,
       );
       for (const m of batch) {
         if (!used.current.has(m.title)) queue.current.push(m);
@@ -61,7 +64,7 @@ export default function Roulette({
       if (!used.current.has(m.title)) return m;
     }
     // 큐가 비었으면(아직 로딩 중이거나 AI 미설정) 로컬 덱으로 즉시 폴백
-    return spinRoulette(cityId, [...used.current]);
+    return spinRoulette(cityId, [...used.current], horrorMode);
   };
 
   const spin = () => {
@@ -93,7 +96,7 @@ export default function Roulette({
     <div className="rounded-3xl bg-morgo-navy p-6 text-center text-white shadow-lg shadow-morgo-navy/25">
       <div className="text-sm font-bold text-morgo-yellow">🎰 도착 룰렛</div>
       <p className="mt-1 text-xs opacity-75">
-        여기서 뭘 할지는… 운명의 룰렛이 정해줍니다
+        뭘 시킬지는 룰렛 맘. 거절 못 함
       </p>
 
       <div
@@ -119,14 +122,14 @@ export default function Roulette({
               onClick={spin}
               className="min-h-[48px] flex-1 rounded-xl border border-white/25 font-bold text-white/80"
             >
-              🔄 다시 돌리기
+              😨 이건 못 해, 재도전
             </button>
             <button
               type="button"
               onClick={() => onAccept(result)}
               className="min-h-[48px] flex-[1.5] rounded-xl bg-morgo-yellow font-extrabold text-morgo-navy"
             >
-              🔥 도전할래!
+              🔥 간다 이판사판
             </button>
           </div>
         </div>
@@ -137,7 +140,7 @@ export default function Roulette({
           disabled={phase === "spinning"}
           className="mt-6 min-h-[52px] w-full rounded-xl bg-morgo-yellow font-extrabold text-morgo-navy disabled:opacity-70"
         >
-          {phase === "spinning" ? "두구두구두구…" : "룰렛 돌리기 🎲"}
+          {phase === "spinning" ? "뭐가 걸릴지… 각오해" : "돌린다, 각오 됐냐 🎲"}
         </button>
       )}
     </div>

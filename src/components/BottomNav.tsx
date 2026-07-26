@@ -14,11 +14,11 @@ const TABS = [
 export default function BottomNav() {
   const pathname = usePathname();
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 border-t border-morgo-yellow-soft bg-morgo-card/95 backdrop-blur pb-[env(safe-area-inset-bottom)] md:top-0 md:bottom-auto md:border-t-0 md:border-b">
+    <nav className="fixed bottom-0 inset-x-0 z-40 border-t border-morgo-yellow bg-morgo-navy pb-[env(safe-area-inset-bottom)] md:top-0 md:bottom-auto md:border-t-0 md:border-b">
       <div className="mx-auto flex max-w-3xl md:max-w-5xl md:justify-between md:px-6 md:items-center">
         <Link
           href="/"
-          className="hidden md:flex items-center gap-1 text-xl font-extrabold text-morgo-navy py-3"
+          className="hidden md:flex items-center gap-1 text-xl font-extrabold text-white py-3"
         >
           Morgo<span className="text-morgo-yellow">📍</span>
         </Link>
@@ -35,8 +35,8 @@ export default function BottomNav() {
                 href={tab.href}
                 className={`flex flex-1 md:flex-none flex-col md:flex-row items-center gap-0.5 md:gap-1.5 py-2 md:py-3 md:px-3 min-h-[52px] md:min-h-0 justify-center text-[11px] md:text-sm ${
                   active
-                    ? "text-morgo-navy font-bold"
-                    : "text-morgo-navy/45 hover:text-morgo-navy"
+                    ? "text-morgo-yellow font-bold"
+                    : "text-white/40 hover:text-white/70"
                 }`}
               >
                 <span

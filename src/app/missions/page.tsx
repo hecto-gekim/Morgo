@@ -4,7 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import MissionCard from "@/components/MissionCard";
-import { formatDateKo } from "@/lib/logic";
+import RandomTripLauncher from "@/components/RandomTripLauncher";
+import { formatDateKo, totalEarnedPoints } from "@/lib/logic";
 import { getCity } from "@/lib/seed";
 import { useMorgo } from "@/lib/store";
 import type { Trip } from "@/lib/types";
@@ -18,13 +19,6 @@ export default function MissionsPage() {
 }
 
 const MISSION_STATUSES = ["REVEALED", "TRIP_IN_PROGRESS", "COMPLETED"];
-
-function totalPoints(trips: Trip[]): number {
-  return trips
-    .flatMap((t) => t.missions ?? [])
-    .filter((m) => m.status === "PASSED")
-    .reduce((n, m) => n + m.mission.points, 0);
-}
 
 function badgeOf(points: number): { emoji: string; name: string; next?: number } {
   if (points >= 300) return { emoji: "👑", name: "여행의 달인" };
@@ -43,7 +37,7 @@ function MissionsContent() {
   );
   const waitingTrip = trips.find((t) => t.status === "REVEAL_WAITING");
 
-  const points = totalPoints(trips);
+  const points = totalEarnedPoints(trips);
   const badge = badgeOf(points);
   const passedCount = trips
     .flatMap((t) => t.missions ?? [])
@@ -91,14 +85,33 @@ function MissionsContent() {
           image="/character/wondering.png"
           title="여행이 공개되면 미션이 등장해요"
           desc="목적지가 공개되는 순간, 그 도시에 맞는 미션 4개가 배정됩니다."
-          cta={{ href: `/trip/${waitingTrip.id}`, label: "카운트다운 보러 가기" }}
+          action={
+            <Link
+              href={`/trip/${waitingTrip.id}`}
+              className="mt-5 inline-block rounded-xl bg-morgo-navy px-6 py-3 font-bold text-white"
+            >
+              카운트다운 보러 가기
+            </Link>
+          }
         />
       ) : (
         <EmptyState
           image="/character/camera.png"
-          title="아직 진행 중인 미션이 없어요"
-          desc="여행을 예약하고 목적지가 공개되면 사진 미션에 도전할 수 있어요."
-          cta={{ href: "/trip/new", label: "모르고 떠나기" }}
+          title="미션 하나도 안 깬 거 실화냐"
+          desc="핀 던지면 바로 AI가 미션을 던져요. 도망갈 곳 없음."
+          action={
+            <RandomTripLauncher>
+              {(open) => (
+                <button
+                  type="button"
+                  onClick={open}
+                  className="mt-5 inline-block rounded-xl bg-morgo-navy px-6 py-3 font-bold text-white"
+                >
+                  🎯 핀 던지러 가기
+                </button>
+              )}
+            </RandomTripLauncher>
+          }
         />
       )}
     </div>
@@ -139,12 +152,12 @@ function EmptyState({
   image,
   title,
   desc,
-  cta,
+  action,
 }: {
   image: string;
   title: string;
   desc: string;
-  cta: { href: string; label: string };
+  action: React.ReactNode;
 }) {
   return (
     <div className="mt-12 text-center text-morgo-navy/55">
@@ -157,12 +170,7 @@ function EmptyState({
       />
       <h2 className="mt-3 font-bold text-morgo-navy">{title}</h2>
       <p className="mt-1 text-sm">{desc}</p>
-      <Link
-        href={cta.href}
-        className="mt-5 inline-block rounded-xl bg-morgo-navy px-6 py-3 font-bold text-white"
-      >
-        {cta.label}
-      </Link>
+      {action}
     </div>
   );
 }

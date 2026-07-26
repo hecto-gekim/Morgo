@@ -5,13 +5,15 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
-import BlindImage from "@/components/BlindImage";
 import Countdown from "@/components/Countdown";
 import MissionCard from "@/components/MissionCard";
 import Roulette from "@/components/Roulette";
 import ShareCard from "@/components/ShareCard";
+import SurpriseMissionPopup from "@/components/SurpriseMissionPopup";
 import { formatDateKo, formatWon } from "@/lib/logic";
-import { getAccommodation, getCity, getCityExtra } from "@/lib/seed";
+import { RARITY_LABELS } from "@/lib/rarity";
+import { generateStartMissions } from "@/lib/roulette-ai";
+import { cityLabel, getAccommodation, getCity, getCityExtra } from "@/lib/seed";
 import { useMorgo } from "@/lib/store";
 import {
   FACILITY_LABELS,
@@ -236,12 +238,28 @@ function WaitingView({
 function RevealedView({ trip }: { trip: Trip }) {
   const completeTrip = useMorgo((s) => s.completeTrip);
   const addTripMission = useMorgo((s) => s.addTripMission);
+  const setTripMissions = useMorgo((s) => s.setTripMissions);
+  const horrorMode = useMorgo((s) => s.horrorMode);
   const [showShare, setShowShare] = useState(false);
   const acc = trip.bookedAccommodationId
     ? getAccommodation(trip.bookedAccommodationId)
     : undefined;
   const city = getCity(trip.cityId);
   const extra = getCityExtra(trip.cityId);
+
+  // 공개 화면 첫 진입 시, 도착 룰렛과 같은 AI 엔진으로 시작 미션 4개를 그 자리에서 생성
+  const hasMissions = !!trip.missions && trip.missions.length > 0;
+  useEffect(() => {
+    if (hasMissions) return;
+    let alive = true;
+    generateStartMissions(trip.cityId, trip.rarity, horrorMode).then((missions) => {
+      if (alive) setTripMissions(trip.id, missions);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [trip.id, trip.cityId, trip.rarity, hasMissions, setTripMissions, horrorMode]);
+
   if (!city) {
     return (
       <p className="py-20 text-center text-morgo-navy/40">
@@ -254,28 +272,34 @@ function RevealedView({ trip }: { trip: Trip }) {
   const missions = trip.missions ?? [];
   const passed = missions.filter((m) => m.status === "PASSED");
   const missionDone = passed.length;
-  const points = passed.reduce((n, m) => n + m.mission.points, 0);
+  const points = passed.reduce((n, m) => n + (m.earnedPoints ?? m.mission.points), 0);
   const isCompleted = trip.status === "COMPLETED";
 
   return (
     <div className="mx-auto max-w-xl">
       <div className="overflow-hidden rounded-3xl bg-morgo-card shadow-lg shadow-morgo-navy/10">
-        {acc ? (
-          <BlindImage theme={acc.imageTheme} className="h-44 w-full" />
-        ) : (
-          <div className="grid h-44 w-full place-items-center bg-gradient-to-br from-morgo-navy to-morgo-navy-deep">
-            <span className="text-5xl">📍</span>
+        <div className="grid h-44 w-full place-items-center bg-gradient-to-br from-morgo-navy via-morgo-navy to-morgo-pink text-center">
+          <div>
+            {trip.rarity && trip.rarity !== "common" && (
+              <div className="mb-1.5 inline-block rounded-full bg-morgo-yellow px-2.5 py-1 text-xs font-extrabold text-morgo-navy">
+                {RARITY_LABELS[trip.rarity]} 지역
+              </div>
+            )}
+            <div className="text-xs font-bold tracking-wide text-morgo-yellow">
+              🎯 당첨
+            </div>
+            <div className="mt-1 text-3xl font-extrabold text-white">
+              {cityLabel(city)}
+            </div>
           </div>
-        )}
+        </div>
         <div className="p-5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-bold text-morgo-pink">
                 🎊 목적지가 공개되었어요!
               </p>
-              <h1 className="mt-1 text-2xl font-extrabold">
-                {city.provinceName} {city.name}
-              </h1>
+              <h1 className="mt-1 text-2xl font-extrabold">{cityLabel(city)}</h1>
               {acc && (
                 <>
                   <p className="mt-1 font-semibold text-morgo-navy/80">{acc.name}</p>
@@ -338,7 +362,12 @@ function RevealedView({ trip }: { trip: Trip }) {
 
       {extra && (
         <section className="mt-4 rounded-2xl bg-morgo-card p-5 shadow-sm">
-          <h2 className="font-bold">이 도시, 이렇게 즐겨요</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-bold">이 도시, 이렇게 즐겨요</h2>
+            <span className="rounded-full bg-morgo-yellow-soft px-2.5 py-1 text-[11px] font-bold text-morgo-navy/70">
+              ✨ 추천
+            </span>
+          </div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
             <div className="rounded-xl bg-morgo-mint-soft p-3">
               <div className="text-[11px] text-morgo-navy/50">대표 관광지</div>
@@ -354,41 +383,52 @@ function RevealedView({ trip }: { trip: Trip }) {
         </section>
       )}
 
-      {missions.length > 0 && (
-        <section className="mt-6">
-          <div className="flex items-center justify-between">
-            <h2 className="font-bold">📸 미션 & 룰렛 도전</h2>
-            <span className="text-sm font-semibold text-morgo-pink">
-              {missionDone}/{missions.length} 성공 · {points}P
-            </span>
+      <section className="mt-6">
+        {missions.length > 0 ? (
+          <>
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold">📸 미션 & 룰렛 도전</h2>
+              <span className="text-sm font-semibold text-morgo-pink">
+                {missionDone}/{missions.length} 성공 · {points}P
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-morgo-navy/50">
+              사진으로 인증하면 포인트가 쌓여요. 결과는 카드로 공유할 수 있어요.
+            </p>
+            <div className="mt-3 space-y-2.5">
+              {missions.map((m) => (
+                <MissionCard key={m.mission.id} tripId={trip.id} tm={m} />
+              ))}
+            </div>
+            {missionDone > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowShare(true)}
+                className="mt-3 w-full rounded-xl bg-morgo-pink py-3 font-extrabold text-morgo-navy"
+              >
+                🎉 결과 카드 공유하기
+              </button>
+            )}
+          </>
+        ) : (
+          <div className="rounded-2xl bg-morgo-navy p-5 text-center text-sm font-semibold text-morgo-yellow shadow-sm">
+            🎯 AI가 미션 뽑는 중… 각오해
           </div>
-          <p className="mt-0.5 text-xs text-morgo-navy/50">
-            사진으로 인증하면 포인트가 쌓여요. 결과는 카드로 공유할 수 있어요.
-          </p>
-          <div className="mt-3 space-y-2.5">
-            {missions.map((m) => (
-              <MissionCard key={m.mission.id} tripId={trip.id} tm={m} />
-            ))}
-          </div>
-          {missionDone > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowShare(true)}
-              className="mt-3 w-full rounded-xl bg-morgo-pink py-3 font-extrabold text-morgo-navy"
-            >
-              🎉 결과 카드 공유하기
-            </button>
-          )}
-        </section>
-      )}
+        )}
+      </section>
 
       {showShare && (
         <ShareCard
           city={city}
           missions={missions}
           points={points}
+          rarity={trip.rarity}
           onClose={() => setShowShare(false)}
         />
+      )}
+
+      {(trip.status === "REVEALED" || trip.status === "TRIP_IN_PROGRESS") && (
+        <SurpriseMissionPopup tripId={trip.id} />
       )}
 
       {acc && (
@@ -416,7 +456,10 @@ function RevealedView({ trip }: { trip: Trip }) {
       ) : (
         <button
           type="button"
-          onClick={() => completeTrip(trip.id)}
+          onClick={() => {
+            completeTrip(trip.id);
+            setShowShare(true); // 완료 즉시 하이라이트 카드로 짜잔
+          }}
           className="mt-4 w-full rounded-xl border-2 border-morgo-navy bg-morgo-card py-3.5 font-bold text-morgo-navy"
         >
           여행 완료하고 지도에 기록하기

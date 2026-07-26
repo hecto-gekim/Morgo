@@ -162,6 +162,9 @@ export interface Booking {
   isSimulation: true;
 }
 
+/** 핀 던지기 결과 등급 (변동 보상 연출용) */
+export type Rarity = "common" | "rare" | "epic" | "legendary";
+
 export interface Trip {
   id: string;
   createdAt: string;
@@ -177,16 +180,26 @@ export interface Trip {
   booking?: Booking;
   /** 공개 시점에 할당되는 여행 미션 (명세서 17장, 3~5개) */
   missions?: TripMission[];
+  /** 핀 던지기에서 나온 등급 (rare 이상이면 보너스 미션 추가) */
+  rarity?: Rarity;
 }
 
 export interface User {
   email: string;
   nickname: string;
+  /** 로그인 건너뛰기로 시작한 임시 사용자 (마이 페이지에서 나중에 로그인 가능) */
+  isGuest?: boolean;
 }
 
 // ── 여행 미션 (명세서 17~18장) ──────────────────────────────
 
-export type MissionCategory = "OBJECT" | "LANDMARK" | "ACTION" | "DARE" | "PLACE";
+export type MissionCategory =
+  | "OBJECT"
+  | "LANDMARK"
+  | "ACTION"
+  | "DARE"
+  | "PLACE"
+  | "HORROR";
 
 export const MISSION_CATEGORY_LABELS: Record<MissionCategory, string> = {
   OBJECT: "사물",
@@ -194,6 +207,7 @@ export const MISSION_CATEGORY_LABELS: Record<MissionCategory, string> = {
   ACTION: "행동",
   DARE: "병맛 도전",
   PLACE: "맛집·카페",
+  HORROR: "괴담",
 };
 
 export interface Mission {
@@ -225,6 +239,8 @@ export interface TripMission {
   /** AI 판정 신뢰도 (명세서 18.3) — 시뮬레이션 값 */
   confidence?: number;
   submittedAt?: string; // ISO
+  /** 실제 지급된 포인트 (통과 시점 이벤트 배율 반영). 없으면 mission.points 그대로 */
+  earnedPoints?: number;
 }
 
 // ── 방문 도시 지도 + 사진 기록 (명세서 15~16장) ─────────────
@@ -248,6 +264,11 @@ export interface CityRecord {
 
 // ── 홈 이벤트 (재미 요소) ───────────────────────────────────
 
+/** 이벤트가 실제로 적용하는 효과 — reward 문구는 이 값과 반드시 일치해야 한다 */
+export type EventEffect =
+  | { type: "points"; multiplier: number }
+  | { type: "rarity"; multiplier: number };
+
 export interface MorgoEvent {
   id: string;
   title: string;
@@ -256,4 +277,5 @@ export interface MorgoEvent {
   /** 남은 시간 카운트다운 대상 */
   endsAt: string; // ISO
   reward: string;
+  effect: EventEffect;
 }

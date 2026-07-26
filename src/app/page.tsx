@@ -2,9 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import EventBanner from "@/components/EventBanner";
+import RandomTripLauncher from "@/components/RandomTripLauncher";
 import { formatDateKo } from "@/lib/logic";
 import { useMorgo } from "@/lib/store";
 import { TRIP_STATUS_LABELS } from "@/lib/types";
@@ -18,18 +18,11 @@ export default function HomePage() {
 }
 
 function HomeContent() {
-  const router = useRouter();
   const user = useMorgo((s) => s.user)!;
   const trips = useMorgo((s) => s.trips);
-  const createInstantTrip = useMorgo((s) => s.createInstantTrip);
   const activeTrip = trips.find((t) =>
     ["REVEAL_WAITING", "REVEALED", "TRIP_IN_PROGRESS"].includes(t.status),
   );
-
-  const startInstant = () => {
-    const id = createInstantTrip();
-    router.push(`/trip/${id}`);
-  };
 
   return (
     <div>
@@ -41,15 +34,15 @@ function HomeContent() {
           <h1 className="mt-1 text-2xl font-extrabold leading-snug">
             이번 주말,
             <br />
-            어디로 갈지 <span className="text-morgo-pink">모르고</span>{" "}
-            떠나볼까요?
+            어디로 <span className="text-morgo-pink">튈지</span> 아무도
+            몰라요
           </h1>
         </div>
         <Image
           src="/character/wave.png"
           alt="인사하는 모로고"
           width={96}
-          height={122}
+          height={134}
           priority
           className="shrink-0"
         />
@@ -71,47 +64,37 @@ function HomeContent() {
           <div className="mt-1 text-sm opacity-80">
             {activeTrip.status === "REVEAL_WAITING"
               ? "목적지는 출발 당일 오전 3시에 공개돼요 →"
-              : "목적지가 공개되었어요! 확인하러 가기 →"}
+              : "이미 걸렸어요. 도망 못 가요 →"}
           </div>
         </Link>
       )}
 
-      <button
-        type="button"
-        onClick={startInstant}
-        className="mt-5 flex w-full items-center justify-between rounded-2xl bg-morgo-navy p-5 text-left text-white shadow-lg shadow-morgo-navy/20 active:bg-morgo-navy-deep"
-      >
-        <div>
-          <div className="font-extrabold">🎰 지금 여기서 룰렛 여행</div>
-          <div className="mt-0.5 text-sm opacity-80">
-            랜덤 도시로 순간이동 → 룰렛이 시키는 대로!
-          </div>
-        </div>
-        <span className="text-2xl opacity-70">→</span>
-      </button>
-
-      <Link
-        href="/trip/new"
-        className="mt-3 flex items-center justify-between rounded-2xl border-2 border-morgo-yellow bg-morgo-yellow-soft p-5 active:bg-morgo-yellow/40"
-      >
-        <div>
-          <div className="font-extrabold text-morgo-navy">🎲 조건 골라 떠나기</div>
-          <div className="mt-0.5 text-sm text-morgo-navy/60">
-            출발지·예산 정하고 공개 카운트다운까지
-          </div>
-        </div>
-        <span className="text-2xl text-morgo-navy/50">→</span>
-      </Link>
+      <RandomTripLauncher>
+        {(open) => (
+          <button
+            type="button"
+            onClick={open}
+            className="mt-5 flex w-full items-center justify-between rounded-2xl bg-morgo-navy p-5 text-left text-white shadow-lg shadow-morgo-navy/20 active:bg-morgo-navy-deep"
+          >
+            <div>
+              <div className="font-extrabold">🎯 핀 던지고 각오해</div>
+              <div className="mt-0.5 text-sm opacity-80">
+                어디 걸릴지 모름 → 룰렛이 시키는 대로 무조건 실행
+              </div>
+            </div>
+            <span className="text-2xl opacity-70">→</span>
+          </button>
+        )}
+      </RandomTripLauncher>
 
       <section className="mt-8">
-        <h2 className="font-bold">Morgo는 이렇게 진행돼요</h2>
+        <h2 className="font-bold">Morgo는 이렇게 굴러가요</h2>
         <ol className="mt-3 space-y-2.5">
           {[
-            "출발지·날짜·예산 등 조건을 입력해요",
-            "도시를 숨긴 블라인드 숙소 후보를 보여드려요",
-            "사진과 편의시설만 보고 1~3순위를 골라요",
-            "테스트 결제 후 예약이 완료돼요",
-            "출발 당일 오전 3시, 목적지가 공개돼요!",
+            "핀을 던지면 그걸로 끝. 도망 못 감",
+            "도착하자마자 AI 룰렛이 미션을 던짐",
+            "사진으로 인증하면 포인트, 못 하면 쫄?",
+            "살아남으면 지도에 전적이 새겨짐",
           ].map((step, i) => (
             <li
               key={step}
