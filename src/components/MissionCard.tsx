@@ -19,7 +19,8 @@ export default function MissionCard({
 }) {
   const submitMission = useMorgo((s) => s.submitMission);
   const resolveMission = useMorgo((s) => s.resolveMission);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
   const { mission, status } = tm;
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -52,7 +53,7 @@ export default function MissionCard({
               {MISSION_CATEGORY_LABELS[mission.category]}
             </span>
             <span className="text-[11px] font-bold text-morgo-pink">
-              +{mission.points}P
+              +{tm.earnedPoints ?? mission.points}P
             </span>
           </div>
           <div className="mt-1 font-bold">{mission.title}</div>
@@ -92,18 +93,34 @@ export default function MissionCard({
                 판정 신뢰도가 낮아요. 다시 도전해볼까요?
               </p>
             )}
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="w-full rounded-xl bg-morgo-navy py-2.5 text-sm font-bold text-white"
-            >
-              📸 {status === "FAILED" ? "다시 인증하기" : "사진으로 인증하기"}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => cameraRef.current?.click()}
+                className="min-h-[44px] flex-1 rounded-xl bg-morgo-navy text-sm font-bold text-white"
+              >
+                📷 {status === "FAILED" ? "다시 촬영" : "바로 촬영"}
+              </button>
+              <button
+                type="button"
+                onClick={() => galleryRef.current?.click()}
+                className="min-h-[44px] flex-1 rounded-xl border border-morgo-navy/20 text-sm font-bold text-morgo-navy/70"
+              >
+                🖼️ 앨범에서 선택
+              </button>
+            </div>
             <input
-              ref={fileRef}
+              ref={cameraRef}
               type="file"
               accept="image/*"
               capture="environment"
+              className="hidden"
+              onChange={onPick}
+            />
+            <input
+              ref={galleryRef}
+              type="file"
+              accept="image/*"
               className="hidden"
               onChange={onPick}
             />

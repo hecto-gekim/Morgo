@@ -1,18 +1,20 @@
-import {
-  ACCOMMODATIONS,
-  CITIES,
-  COMMON_MISSIONS,
-  landmarkMissionOf,
-} from "./seed";
+import { ACCOMMODATIONS, CITIES } from "./seed";
 import type {
   Accommodation,
   City,
   DistanceRange,
-  Mission,
   MorgoEvent,
+  Trip,
   TripConditions,
-  TripMission,
 } from "./types";
+
+/** 성공한 미션들의 포인트 총합(평생 획득량 — 배지 등급용, 포인트 사용과 무관하게 줄지 않음) */
+export function totalEarnedPoints(trips: Trip[]): number {
+  return trips
+    .flatMap((t) => t.missions ?? [])
+    .filter((m) => m.status === "PASSED")
+    .reduce((n, m) => n + (m.earnedPoints ?? m.mission.points), 0);
+}
 
 /** 두 좌표 간 거리(km) — 하버사인 공식 */
 export function haversineKm(
@@ -157,21 +159,24 @@ export function todayStr(): string {
 const WEEKLY_EVENTS: Omit<MorgoEvent, "id" | "endsAt">[] = [
   {
     title: "모르고 위크 🎡",
-    tagline: "이번 주 떠나면 미션 포인트가 2배!",
+    tagline: "이번 주 미션 성공하면 포인트가 2배!",
     emoji: "🎡",
     reward: "미션 포인트 2배",
+    effect: { type: "points", multiplier: 2 },
   },
   {
     title: "랜덤 여행 페스타 🎲",
-    tagline: "지금 뽑으면 숨은 인기 도시가 나올 확률 UP",
+    tagline: "이번 주는 핀 던질 때 레어 등급 확률이 올라가요",
     emoji: "🎲",
-    reward: "인기 도시 확률 UP",
+    reward: "레어 확률 UP",
+    effect: { type: "rarity", multiplier: 1.8 },
   },
   {
-    title: "노을 헌터 위크 🌇",
-    tagline: "노을·일몰 미션 성공 시 보너스 배지",
-    emoji: "🌇",
-    reward: "한정 배지 지급",
+    title: "폭주 위크 🔥",
+    tagline: "이번 주 미션 성공 시 포인트 2배로 몰아준다",
+    emoji: "🔥",
+    reward: "미션 포인트 2배",
+    effect: { type: "points", multiplier: 2 },
   },
 ];
 
@@ -212,33 +217,6 @@ export function projectKorea(
   const x = ((lng - lngMin) / (lngMax - lngMin)) * MAP_VIEW.w;
   const y = ((latMax - lat) / (latMax - latMin)) * MAP_VIEW.h;
   return { x, y };
-}
-
-// ── 여행 미션 할당 (명세서 17.3 — 여행당 3~5개) ──────────────
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-/**
- * 도시별 관광지 미션 1 + 행동 1 + 사물 2 = 총 4개를 할당한다.
- * 공개 시점에 1회만 호출되어 trip.missions 에 저장된다.
- */
-export function assignTripMissions(cityId: string): TripMission[] {
-  const picked: Mission[] = [];
-  const landmark = landmarkMissionOf(cityId);
-  if (landmark) picked.push(landmark);
-
-  const actions = shuffle(COMMON_MISSIONS.filter((m) => m.category === "ACTION"));
-  const objects = shuffle(COMMON_MISSIONS.filter((m) => m.category === "OBJECT"));
-  picked.push(...actions.slice(0, 1), ...objects.slice(0, 2));
-
-  return picked.map((mission) => ({ mission, status: "ASSIGNED" as const }));
 }
 
 /** 가장 가까운 시드 도시명 (GPS 라벨용) */

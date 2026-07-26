@@ -11,21 +11,29 @@ export interface Region {
   polys: [number, number][][];
 }
 
-const NAVY = "#1e2a4a";
-const PINK = "#f49ba8";
-const PINK_SOFT = "#fce3e6";
-const YELLOW = "#f6d35c";
+const PALETTE = {
+  normal: { navy: "#0a0a12", pink: "#e91e63", pinkSoft: "#ffd6e4", yellow: "#eaff00" },
+  // globals.css의 [data-theme="horror"] 값과 맞춤
+  horror: { navy: "#0d0205", pink: "#b3122e", pinkSoft: "#ffd6dc", yellow: "#7cff3d" },
+};
+
+/** activeCode가 2자리(광역시 전체 뭉침 코드)면 같은 접두사 전체를, 5자리면 정확히 그 시군구만 매칭 */
+function matchesActive(code: string, activeCode?: string): boolean {
+  if (!activeCode) return false;
+  return activeCode.length <= 2 ? code.startsWith(activeCode) : code === activeCode;
+}
 
 /** 방문/사진 상태에 따른 폴리곤 채움색 (사진 없을 때) */
 function fillOf(
   record: CityRecord | undefined,
   isSeed: boolean,
   isActive: boolean,
+  colors: typeof PALETTE.normal,
 ): { fill: string; opacity: number } {
-  if (isActive) return { fill: YELLOW, opacity: 1 };
-  if (record) return { fill: PINK, opacity: 0.55 };
-  if (isSeed) return { fill: PINK_SOFT, opacity: 1 };
-  return { fill: NAVY, opacity: 0.06 };
+  if (isActive) return { fill: colors.yellow, opacity: 1 };
+  if (record) return { fill: colors.pink, opacity: 0.55 };
+  if (isSeed) return { fill: colors.pinkSoft, opacity: 1 };
+  return { fill: colors.navy, opacity: 0.06 };
 }
 
 /** 링 → SVG path 조각 */
@@ -58,20 +66,6 @@ function bbox(polys: [number, number][][]) {
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
-/** 가장 큰 링의 대략 중심 (라벨 위치) */
-function centroid(polys: [number, number][][]): { x: number; y: number } {
-  let big = polys[0];
-  for (const r of polys) if (r.length > big.length) big = r;
-  let sx = 0;
-  let sy = 0;
-  for (const [lng, lat] of big) {
-    const p = projectKorea(lat, lng);
-    sx += p.x;
-    sy += p.y;
-  }
-  return { x: sx / big.length, y: sy / big.length };
-}
-
 /**
  * 대한민국 시·군·구 폴리곤 지도(명세서 16장).
  * 사진을 등록한 도시는 그 사진이 시·군 경계 모양으로 클립되어 지도에 표시된다.
@@ -82,13 +76,17 @@ export default function KoreaMap({
   activeCode,
   selectedCode,
   onSelect,
+  horror = false,
 }: {
   regions: Region[];
   records: Record<string, CityRecord>;
   activeCode?: string;
   selectedCode?: string;
   onSelect: (code: string, name: string) => void;
+  /** 공포 모드 팔레트로 그릴지 (색상은 하드코딩 hex라 CSS 변수를 못 타서 prop으로 받음) */
+  horror?: boolean;
 }) {
+  const colors = horror ? PALETTE.horror : PALETTE.normal;
   return (
     <svg
       viewBox={`0 0 ${MAP_VIEW.w} ${MAP_VIEW.h}`}
@@ -115,8 +113,8 @@ export default function KoreaMap({
         const seed = getCityByCode(r.code);
         const key = seed?.id ?? r.code;
         const record = records[key];
-        const isActive = r.code === activeCode;
-        const { fill, opacity } = fillOf(record, !!seed, isActive);
+        const isActive = matchesActive(r.code, activeCode);
+        const { fill, opacity } = fillOf(record, !!seed, isActive, colors);
         return (
           <path
             key={`fill-${r.code}`}
@@ -156,7 +154,7 @@ export default function KoreaMap({
             <path
               d={r.polys.map(ringPath).join(" ")}
               fill="none"
-              stroke={isSelected ? NAVY : PINK}
+              stroke={isSelected ? colors.navy : colors.pink}
               strokeWidth={isSelected ? 0.9 : 0.5}
               className="cursor-pointer"
             />
@@ -174,35 +172,10 @@ export default function KoreaMap({
             key={`sel-${r.code}`}
             d={r.polys.map(ringPath).join(" ")}
             fill="none"
-            stroke={NAVY}
+            stroke={colors.navy}
             strokeWidth={0.8}
             className="pointer-events-none"
           />
-        );
-      })}
-
-      {/* 시드 도시 라벨 (사진 없는 곳만) */}
-      {regions.map((r) => {
-        const seed = getCityByCode(r.code);
-        if (!seed) return null;
-        const record = records[seed.id];
-        if (record?.photos[0]) return null; // 사진이 있으면 라벨 생략
-        const c = centroid(r.polys);
-        return (
-          <text
-            key={`label-${r.code}`}
-            x={c.x}
-            y={c.y}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontSize={2.6}
-            fontWeight={700}
-            fill={NAVY}
-            fillOpacity={record ? 1 : 0.5}
-            className="pointer-events-none select-none"
-          >
-            {seed.name.replace(/(시|군)$/, "")}
-          </text>
         );
       })}
     </svg>

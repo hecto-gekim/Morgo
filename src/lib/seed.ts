@@ -28,13 +28,121 @@ export const CITIES: City[] = [
   { id: "jecheon", name: "제천시", provinceName: "충청북도", officeLatitude: 37.1326, officeLongitude: 128.191, code: "33030" },
 ];
 
-export function getCity(cityId: string): City | undefined {
-  return CITIES.find((c) => c.id === cityId);
+// 시군구 코드 앞 2자리 → 시/도 (public/korea-sigungu.json 기준, 실측으로 확인)
+const PROVINCE_BY_PREFIX: Record<string, string> = {
+  "11": "서울특별시",
+  "21": "부산광역시",
+  "22": "대구광역시",
+  "23": "인천광역시",
+  "24": "광주광역시",
+  "25": "대전광역시",
+  "26": "울산광역시",
+  "29": "세종특별자치시",
+  "31": "경기도",
+  "32": "강원특별자치도",
+  "33": "충청북도",
+  "34": "충청남도",
+  "35": "전북특별자치도",
+  "36": "전라남도",
+  "37": "경상북도",
+  "38": "경상남도",
+  "39": "제주특별자치도",
+};
+
+function provinceOfCode(code: string): string {
+  return PROVINCE_BY_PREFIX[code.slice(0, 2)] ?? "대한민국";
 }
 
-/** 행정코드 → 시드 도시 (폴리곤 클릭 시 여행 정보 연결용) */
+/** 구 단위로 쪼개져 있는 특별시/광역시 (서울 제외 — 서울은 뽑기 대상에서 아예 빠짐) */
+const METRO_PREFIXES = ["21", "22", "23", "24", "25", "26"];
+const EXCLUDED_PREFIXES = ["11"]; // 서울
+
+/** 폴리곤 최대 링의 대략 중심 (경도, 위도) */
+function ringCentroid(polys: [number, number][][]): { lat: number; lng: number } {
+  let big = polys[0];
+  for (const r of polys) if (r.length > big.length) big = r;
+  let sLng = 0;
+  let sLat = 0;
+  for (const [lng, lat] of big) {
+    sLng += lng;
+    sLat += lat;
+  }
+  return { lat: sLat / big.length, lng: sLng / big.length };
+}
+
+/** 시드에 없는 전국 시군구(광역시는 구 단위 대신 시 전체로 뭉쳐서)를 담아두는 런타임 캐시 */
+const REGION_CITY_CACHE = new Map<string, City>();
+
+/**
+ * 지도 폴리곤(korea-sigungu.json) 전체를 도시 레지스트리에 등록한다.
+ * - 이미 시드에 있는 코드는 건드리지 않는다.
+ * - 서울은 등록하지 않는다(핀/화살 뽑기 대상에서 제외).
+ * - 부산·대구·인천·광주·대전·울산처럼 구 단위로 쪼개진 광역시는 "oo구"가 아니라
+ *   광역시 전체를 시 단위 하나로 뭉쳐서 등록한다(좌표는 구들의 평균 중심).
+ * - 그 외 시/군은 그대로 하나씩 등록한다.
+ * 지도를 처음 불러오는 곳(useKoreaRegions)에서 1회 호출되며, 이후 getCity/getCityByCode가 전국 어디든 찾을 수 있게 된다.
+ */
+export function registerRegionsAsCities(
+  regions: { code: string; name: string; polys: [number, number][][] }[],
+): void {
+  const metroGroups = new Map<string, { code: string; polys: [number, number][][] }[]>();
+
+  for (const r of regions) {
+    const prefix = r.code.slice(0, 2);
+    if (EXCLUDED_PREFIXES.includes(prefix)) continue;
+    if (METRO_PREFIXES.includes(prefix)) {
+      if (!metroGroups.has(prefix)) metroGroups.set(prefix, []);
+      metroGroups.get(prefix)!.push(r);
+      continue;
+    }
+    if (CITIES.some((c) => c.code === r.code)) continue;
+    if (REGION_CITY_CACHE.has(r.code)) continue;
+    const { lat, lng } = ringCentroid(r.polys);
+    REGION_CITY_CACHE.set(r.code, {
+      id: r.code,
+      name: r.name,
+      provinceName: provinceOfCode(r.code),
+      officeLatitude: lat,
+      officeLongitude: lng,
+      code: r.code,
+    });
+  }
+
+  for (const [prefix, group] of metroGroups) {
+    if (REGION_CITY_CACHE.has(prefix)) continue;
+    const centers = group.map((g) => ringCentroid(g.polys));
+    const lat = centers.reduce((s, c) => s + c.lat, 0) / centers.length;
+    const lng = centers.reduce((s, c) => s + c.lng, 0) / centers.length;
+    const fullName = provinceOfCode(prefix); // 예: "부산광역시"
+    REGION_CITY_CACHE.set(prefix, {
+      id: prefix,
+      name: fullName.replace(/(광역시|특별시|특별자치시)$/, ""), // "부산"
+      provinceName: fullName,
+      officeLatitude: lat,
+      officeLongitude: lng,
+      code: prefix, // 2자리 코드 = KoreaMap에서 같은 접두사 전체를 하이라이트하는 신호
+    });
+  }
+}
+
+export function getCity(cityId: string): City | undefined {
+  return CITIES.find((c) => c.id === cityId) ?? REGION_CITY_CACHE.get(cityId);
+}
+
+/** 행정코드 → 도시 (시드 우선, 없으면 전국 캐시에서 찾음. 폴리곤 클릭/핀 던지기 연결용) */
 export function getCityByCode(code: string): City | undefined {
-  return CITIES.find((c) => c.code === code);
+  return CITIES.find((c) => c.code === code) ?? REGION_CITY_CACHE.get(code);
+}
+
+/** "도명 시명" 표기 도우미 — 부산처럼 시명이 도명에 이미 포함되면 중복 없이 도명만 보여준다 */
+export function cityLabel(city: Pick<City, "name" | "provinceName">): string {
+  if (city.provinceName.startsWith(city.name)) return city.provinceName;
+  return `${city.provinceName} ${city.name}`;
+}
+
+/** 핀/화살 뽑기 대상 전체 (시드 10곳 + 전국 캐시, 서울 제외·광역시는 시 단위로 뭉쳐짐) */
+export function getThrowablePool(): City[] {
+  return [...CITIES, ...REGION_CITY_CACHE.values()];
 }
 
 // 도시별 시드 숙소 (Phase 2에서 네이버 지역 검색 API + 관리자 검수로 대체)
@@ -354,19 +462,7 @@ export function getCityExtra(cityId: string): CityExtra | undefined {
 }
 
 // ── 여행 미션 카탈로그 (명세서 17.2) ─────────────────────────
-// 공통 미션: 사물/행동. 관광지(LANDMARK) 미션은 도시별로 동적 생성한다.
-export const COMMON_MISSIONS: Mission[] = [
-  { id: "obj-sunset", title: "노을 담기", description: "하늘이 붉게 물드는 순간을 찍어보세요.", category: "OBJECT", emoji: "🌇", points: 20 },
-  { id: "obj-cat", title: "동네 고양이 찾기", description: "여행지에서 만난 고양이를 찍어보세요.", category: "OBJECT", emoji: "🐱", points: 15 },
-  { id: "obj-roof", title: "전통 기와 찍기", description: "멋스러운 기와 지붕을 찾아보세요.", category: "OBJECT", emoji: "🏯", points: 15 },
-  { id: "obj-market", title: "시장 간판 찍기", description: "지역 시장의 간판을 담아보세요.", category: "OBJECT", emoji: "🏮", points: 15 },
-  { id: "obj-tree", title: "특이한 나무 찾기", description: "모양이 독특한 나무를 찍어보세요.", category: "OBJECT", emoji: "🌳", points: 15 },
-  { id: "obj-red", title: "빨간 건물 찍기", description: "눈에 띄는 빨간색 건물을 찾아보세요.", category: "OBJECT", emoji: "🟥", points: 15 },
-  { id: "act-food", title: "지역 대표 음식 먹기", description: "이 지역의 대표 음식을 맛보고 인증하세요.", category: "ACTION", emoji: "🍽️", points: 25 },
-  { id: "act-buy", title: "시장에서 물건 사기", description: "전통시장에서 무언가를 구매해보세요.", category: "ACTION", emoji: "🛍️", points: 20 },
-  { id: "act-transit", title: "대중교통 이용하기", description: "버스나 기차 등 대중교통을 이용해보세요.", category: "ACTION", emoji: "🚌", points: 20 },
-  { id: "act-sunrise", title: "일출 또는 일몰 보기", description: "해가 뜨거나 지는 순간을 함께하세요.", category: "ACTION", emoji: "🌄", points: 25 },
-];
+// 관광지(LANDMARK) 미션은 도시별로 동적 생성, 나머지는 AI가 매번 새로 만든다(roulette-ai).
 
 /** 도시 고정 관광지 미션 (CITY_EXTRAS 기반 동적 생성) */
 export function landmarkMissionOf(cityId: string): Mission | null {
@@ -457,7 +553,6 @@ export function getCityPlaces(cityId: string): CityPlace[] {
 // 병맛 행동 챌린지 덱 (도시 무관). {place} 는 룰렛에서 도시 장소로 치환.
 const DARE_CHALLENGES: Omit<Mission, "id">[] = [
   { title: "어르신께 맛집 추천받기", description: "지나가는 동네 어르신께 진짜 맛집을 여쭤보고 그 집에 가보세요.", category: "DARE", emoji: "🧓", points: 30 },
-  { title: "빨간 옷을 따라가기", description: "빨간 옷 입은 사람이 가는 방향으로 100m 걸어가 보세요.", category: "DARE", emoji: "🟥", points: 25 },
   { title: "제일 이상한 메뉴 시키기", description: "메뉴판에서 가장 낯선 메뉴를 골라 도전해보세요.", category: "DARE", emoji: "🍽️", points: 30 },
   { title: "무작정 골목 탐험", description: "처음 보는 골목으로 아무 생각 없이 들어가 끝까지 걸어보세요.", category: "DARE", emoji: "🌀", points: 20 },
   { title: "가위바위보 여행", description: "동행자와 가위바위보로 다음 목적지를 정하세요. (혼자면 동전 던지기)", category: "DARE", emoji: "✌️", points: 20 },
@@ -470,7 +565,7 @@ const DARE_CHALLENGES: Omit<Mission, "id">[] = [
   { title: "지역 특산물 사 먹기", description: "이 동네 특산물이나 길거리 간식 하나를 사 먹어보세요.", category: "DARE", emoji: "🍢", points: 25 },
   { title: "벤치에서 10분 멍때리기", description: "아무 벤치에 앉아 딱 10분만 아무것도 안 하고 쉬어보세요.", category: "DARE", emoji: "🪑", points: 15 },
   { title: "제일 오래돼 보이는 가게", description: "가장 오래된 느낌의 가게를 찾아 들어가 보세요.", category: "DARE", emoji: "🏚️", points: 30 },
-  { title: "노래 흥얼대며 걷기", description: "좋아하는 노래를 흥얼거리며 다음 골목까지 걸어보세요.", category: "DARE", emoji: "🎶", points: 15 },
+  { title: "제일 신나 보이는 표정", description: "지금 이 순간 제일 신난 표정을 사진으로 남겨보세요.", category: "DARE", emoji: "🎶", points: 15 },
   { title: "처음 보는 음료 사기", description: "편의점에서 한 번도 안 마셔본 음료를 사 마셔보세요.", category: "DARE", emoji: "🥤", points: 20 },
   { title: "동네 강아지·고양이 찍기", description: "지나가는 강아지나 고양이 사진을 찍어보세요.", category: "DARE", emoji: "🐕", points: 20 },
   { title: "벽화·낙서 찾기", description: "골목의 벽화나 재밌는 낙서를 찾아 찍어보세요.", category: "DARE", emoji: "🎨", points: 20 },
@@ -482,7 +577,7 @@ const DARE_CHALLENGES: Omit<Mission, "id">[] = [
   { title: "지역명 들어간 메뉴 먹기", description: "이 지역 이름이 들어간 메뉴를 찾아 먹어보세요.", category: "DARE", emoji: "🍜", points: 25 },
   { title: "한 정거장 대중교통", description: "버스나 기차로 딱 한 정거장만 타보세요.", category: "DARE", emoji: "🚌", points: 25 },
   { title: "제일 높은 곳에서 내려다보기", description: "근처에서 가장 높은 곳에 올라 도시를 내려다보세요.", category: "DARE", emoji: "🏔️", points: 30 },
-  { title: "낯선 사람과 하이파이브", description: "용기 내서 지나가는 사람과 하이파이브 해보세요!", category: "DARE", emoji: "✋", points: 30 },
+  { title: "3초 막춤 챌린지", description: "그 자리에서 아무 막춤이나 추다가, 제일 웃긴 동작에서 사진 한 장을 남기세요.", category: "DARE", emoji: "💃", points: 30 },
   { title: "사장님 추천 메뉴", description: "가게 사장님께 추천 메뉴를 여쭤보고 그대로 시켜보세요.", category: "DARE", emoji: "👨‍🍳", points: 25 },
   { title: "분홍색 물건 3개 찾기", description: "주변에서 분홍색 물건 3개를 찾아 찍어보세요.", category: "DARE", emoji: "🩷", points: 20 },
   { title: "오늘의 행운 색 쇼핑", description: "행운의 색을 하나 정하고, 그 색 물건을 사보세요.", category: "DARE", emoji: "🍀", points: 20 },
@@ -493,14 +588,39 @@ const PLACE_CHALLENGES: Omit<Mission, "id" | "cityId">[] = [
   { title: "{place} 최고가 메뉴", description: "{place}에서 제일 비싼 메뉴에 도전해보세요!", category: "PLACE", emoji: "💸", points: 35 },
 ];
 
+// 괴담/공포 컨셉 챌린지 — 실제 폐가·흉가 진입 없이, 안전한 범위에서만 쫄깃하게
+const HORROR_CHALLENGES: Omit<Mission, "id">[] = [
+  { title: "심야 괴담 검색", description: "이 지역 괴담을 검색해서 하나 읽고 제목을 스크린샷하세요.", category: "HORROR", emoji: "👻", points: 25 },
+  { title: "가장 어두운 골목", description: "안전한 대로변에서, 제일 어둡고 으스스해 보이는 골목을 사진으로만 찍어보세요.", category: "HORROR", emoji: "🌑", points: 25 },
+  { title: "동네 괴담 물어보기", description: "지나가는 분께 이 동네에 떠도는 무서운 이야기가 있는지 물어보세요.", category: "HORROR", emoji: "🗣️", points: 30 },
+  { title: "문 닫은 가게 앞에서", description: "폐업한 가게 간판 앞에서(안에는 들어가지 말고) 인증샷을 남기세요.", category: "HORROR", emoji: "🚪", points: 25 },
+  { title: "길어진 그림자", description: "내 그림자가 유난히 길고 이상하게 늘어진 순간을 찍어보세요.", category: "HORROR", emoji: "🕯️", points: 20 },
+  { title: "제일 무서운 표정 짓기", description: "지금 낼 수 있는 가장 무서운(또는 놀란) 표정을 사진으로 남겨보세요.", category: "HORROR", emoji: "😱", points: 25 },
+  { title: "심야 편의점 미션", description: "가장 가까운 편의점에서 야식을 사고, 계산대 풍경을 찍어보세요.", category: "HORROR", emoji: "🏪", points: 20 },
+  { title: "안개 낀 듯한 사진", description: "뿌옇거나 어두워서 분위기 있는 사진 한 장을 남겨보세요.", category: "HORROR", emoji: "🌫️", points: 20 },
+];
+
 /**
- * 도착 룰렛 스핀(로컬 폴백 — AI 미사용 시). 70% 병맛 행동, 30% 도시 장소 챌린지.
+ * 도착 룰렛 스핀(로컬 폴백 — AI 미사용 시). 병맛 행동 60% · 도시 장소 25% · 괴담 15%.
+ * horror=true(공포 모드)면 괴담 덱에서만 뽑는다.
  * exclude 에 담긴 제목은 가급적 피해 뽑아 중복을 줄인다.
  */
-export function spinRoulette(cityId: string, exclude: string[] = []): Mission {
+export function spinRoulette(
+  cityId: string,
+  exclude: string[] = [],
+  horror = false,
+): Mission {
   const skip = new Set(exclude);
   const nonce = Math.floor(Math.random() * 1e6).toString(36);
   const places = getCityPlaces(cityId);
+  const horrorCands = HORROR_CHALLENGES.map((c) => ({ ...c }));
+
+  if (horror) {
+    const fresh = horrorCands.filter((c) => !skip.has(c.title));
+    const pool = fresh.length > 0 ? fresh : horrorCands;
+    const base = pool[Math.floor(Math.random() * pool.length)];
+    return { ...base, id: `spin-${nonce}` } as Mission;
+  }
 
   // 가능한 모든 후보(제목 기준)를 만들어 exclude 되지 않은 것에서 뽑는다
   const placeCands = places.flatMap((place) =>
@@ -513,13 +633,20 @@ export function spinRoulette(cityId: string, exclude: string[] = []): Mission {
   );
   const dareCands = DARE_CHALLENGES.map((c) => ({ ...c }));
 
-  const usePlace = placeCands.length > 0 && Math.random() < 0.3;
-  const primary = usePlace ? placeCands : dareCands;
-  const secondary = usePlace ? dareCands : placeCands;
+  // 덱을 먼저 가중치로 고른 뒤, 그 덱 안에서 뽑는다 (장소 후보가 없으면 그 몫은 병맛 행동으로)
+  const roll = Math.random();
+  const deck =
+    placeCands.length > 0 && roll < 0.25
+      ? placeCands
+      : roll < 0.4
+        ? horrorCands
+        : dareCands;
 
-  const fresh = [...primary, ...secondary].filter((c) => !skip.has(c.title));
-  const pool = fresh.length > 0 ? fresh : [...primary, ...secondary];
-  const base = pool[Math.floor(Math.random() * pool.length)];
+  const all = [...dareCands, ...placeCands, ...horrorCands];
+  const fresh = deck.filter((c) => !skip.has(c.title));
+  const pool = fresh.length > 0 ? fresh : all.filter((c) => !skip.has(c.title));
+  const finalPool = pool.length > 0 ? pool : all;
+  const base = finalPool[Math.floor(Math.random() * finalPool.length)];
   return { ...base, id: `spin-${nonce}` } as Mission;
 }
 

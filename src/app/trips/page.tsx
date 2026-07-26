@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import RandomTripLauncher from "@/components/RandomTripLauncher";
 import { formatDateKo } from "@/lib/logic";
 import { useMorgo } from "@/lib/store";
 import { TRIP_STATUS_LABELS } from "@/lib/types";
@@ -30,13 +31,18 @@ function TripsContent() {
             height={110}
             className="mx-auto rounded-3xl"
           />
-          <p className="mt-3 text-sm">아직 여행이 없어요.</p>
-          <Link
-            href="/trip/new"
-            className="mt-4 inline-block rounded-xl bg-morgo-navy px-6 py-3 font-bold text-white"
-          >
-            모르고 떠나기
-          </Link>
+          <p className="mt-3 text-sm">아직 발 안 담갔네. 쫄았어?</p>
+          <RandomTripLauncher>
+            {(open) => (
+              <button
+                type="button"
+                onClick={open}
+                className="mt-4 inline-block rounded-xl bg-morgo-navy px-6 py-3 font-bold text-white"
+              >
+                🎯 핀 던지러 가기
+              </button>
+            )}
+          </RandomTripLauncher>
         </div>
       ) : (
         <div className="mt-4 space-y-2">
@@ -51,8 +57,7 @@ function TripsContent() {
                   {formatDateKo(t.conditions.checkInDate)} 출발
                 </div>
                 <div className="mt-0.5 text-xs text-morgo-navy/50">
-                  {t.conditions.departure.label} ·{" "}
-                  {t.booking?.bookingNumber ?? "예약 전"}
+                  {t.conditions.departure.label}에서 출발
                 </div>
               </div>
               <span
