@@ -4,7 +4,7 @@
 // 받아오고, 키가 없거나 오류면 로컬 덱(spinRoulette)으로 폴백한다.
 
 import { getCity, getCityExtra, landmarkMissionOf, spinRoulette } from "./seed";
-import type { Mission, Rarity, TripMission } from "./types";
+import type { HorrorSpot, Mission, Rarity, TripMission } from "./types";
 
 let seq = 0;
 const uid = () => `spin-${Date.now().toString(36)}-${seq++}`;
@@ -26,19 +26,26 @@ function localBatch(
   return out;
 }
 
+interface RouletteBatch {
+  missions: Mission[];
+  /** horror=true이고 AI가 실제 명소를 찾아준 경우에만 존재 (로컬 폴백 시엔 없음) */
+  spot?: HorrorSpot;
+}
+
 /**
  * 룰렛 챌린지 batch 생성. AI 우선, 실패 시 로컬 폴백.
- * exclude 제목은 피해서 생성한다. horror=true면 전부 괴담/공포 컨셉으로만 뽑는다(공포 모드).
+ * exclude 제목은 피해서 생성한다. horror=true면 전부 괴담/공포 컨셉으로만 뽑고,
+ * 겸사겸사 AI가 검색으로 찾아낸 이 도시의 실존 공포 명소(spot)도 함께 받는다.
  */
-export async function generateChallenges(
+async function fetchRouletteBatch(
   cityId: string,
   exclude: string[],
   count: number,
-  horror = false,
-): Promise<Mission[]> {
+  horror: boolean,
+): Promise<RouletteBatch> {
   const city = getCity(cityId);
   const extra = getCityExtra(cityId);
-  if (!city) return localBatch(cityId, exclude, count, horror);
+  if (!city) return { missions: localBatch(cityId, exclude, count, horror) };
 
   try {
     const res = await fetch("/api/roulette", {
@@ -56,17 +63,34 @@ export async function generateChallenges(
     });
     const data = await res.json();
     if (!res.ok || data?.configured === false || !Array.isArray(data.challenges)) {
-      return localBatch(cityId, exclude, count, horror);
+      return { missions: localBatch(cityId, exclude, count, horror) };
     }
     const challenges = (data.challenges as Omit<Mission, "id" | "cityId">[])
       .filter((c) => c.title)
       .map((c) => ({ ...c, id: uid(), cityId }) as Mission);
-    return challenges.length > 0
-      ? challenges
-      : localBatch(cityId, exclude, count, horror);
+    const missions =
+      challenges.length > 0 ? challenges : localBatch(cityId, exclude, count, horror);
+    const spot: HorrorSpot | undefined =
+      data.spot?.name && data.spot?.description
+        ? { name: data.spot.name, description: data.spot.description }
+        : undefined;
+    return { missions, spot };
   } catch {
-    return localBatch(cityId, exclude, count, horror);
+    return { missions: localBatch(cityId, exclude, count, horror) };
   }
+}
+
+/**
+ * 룰렛 챌린지 batch 생성. AI 우선, 실패 시 로컬 폴백.
+ * exclude 제목은 피해서 생성한다. horror=true면 전부 괴담/공포 컨셉으로만 뽑는다(공포 모드).
+ */
+export async function generateChallenges(
+  cityId: string,
+  exclude: string[],
+  count: number,
+  horror = false,
+): Promise<Mission[]> {
+  return (await fetchRouletteBatch(cityId, exclude, count, horror)).missions;
 }
 
 /** 레어 등급 이상 당첨 시 추가되는 진짜 보너스 미션 (포인트 실지급) */
@@ -94,21 +118,27 @@ function bonusMissionFor(rarity: Rarity | undefined, cityName: string): Mission 
   return null;
 }
 
+interface StartMissions {
+  missions: TripMission[];
+  /** 공포 모드에서 AI가 찾아낸 이 도시의 실존 공포 명소 (로컬 폴백 시엔 없음) */
+  spot?: HorrorSpot;
+}
+
 /**
  * 여행 공개 시점에 배정되는 시작 미션.
  * 관광지 인증샷 1개(있으면 고정) + AI가 그때그때 새로 뽑는 자극적인 챌린지(도착 룰렛과 동일 엔진) 3~4개.
  * 시드에 없는 전국 시군구는 관광지 데이터가 없을 수 있어, 그만큼 AI 챌린지를 더 받아 총 4개를 맞춘다.
  * 핀 던지기 등급이 epic/legendary면 진짜 포인트가 붙는 보너스 미션이 하나 더 추가된다.
- * 공포 모드면 관광지 인증샷 없이 4개 전부 괴담/공포 챌린지로 채운다.
+ * 공포 모드면 관광지 인증샷 없이 4개 전부 괴담/공포 챌린지로 채우고, 이 도시의 실존 공포 명소도 함께 받는다.
  */
 export async function generateStartMissions(
   cityId: string,
   rarity?: Rarity,
   horror = false,
-): Promise<TripMission[]> {
+): Promise<StartMissions> {
   const landmark = horror ? null : landmarkMissionOf(cityId);
   const aiCount = landmark ? 3 : 4;
-  const rest = await generateChallenges(
+  const { missions: rest, spot } = await fetchRouletteBatch(
     cityId,
     landmark ? [landmark.title] : [],
     aiCount,
@@ -117,5 +147,8 @@ export async function generateStartMissions(
   const missions = landmark ? [landmark, ...rest] : rest;
   const bonus = bonusMissionFor(rarity, getCity(cityId)?.name ?? "이 도시");
   const all = bonus ? [...missions, bonus] : missions;
-  return all.map((mission) => ({ mission, status: "ASSIGNED" as const }));
+  return {
+    missions: all.map((mission) => ({ mission, status: "ASSIGNED" as const })),
+    spot,
+  };
 }

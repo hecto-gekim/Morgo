@@ -165,6 +165,12 @@ export interface Booking {
 /** 핀 던지기 결과 등급 (변동 보상 연출용) */
 export type Rarity = "common" | "rare" | "epic" | "legendary";
 
+/** 공포 모드에서 AI가 실시간 검색으로 찾아낸, 이 도시의 실존(요즘 화제인) 공포 명소 */
+export interface HorrorSpot {
+  name: string;
+  description: string;
+}
+
 export interface Trip {
   id: string;
   createdAt: string;
@@ -182,6 +188,8 @@ export interface Trip {
   missions?: TripMission[];
   /** 핀 던지기에서 나온 등급 (rare 이상이면 보너스 미션 추가) */
   rarity?: Rarity;
+  /** 공포 모드로 공개된 여행이면, AI가 찾아낸 이 도시의 공포 명소 */
+  horrorSpot?: HorrorSpot;
 }
 
 export interface User {

@@ -252,9 +252,11 @@ function RevealedView({ trip }: { trip: Trip }) {
   useEffect(() => {
     if (hasMissions) return;
     let alive = true;
-    generateStartMissions(trip.cityId, trip.rarity, horrorMode).then((missions) => {
-      if (alive) setTripMissions(trip.id, missions);
-    });
+    generateStartMissions(trip.cityId, trip.rarity, horrorMode).then(
+      ({ missions, spot }) => {
+        if (alive) setTripMissions(trip.id, missions, spot);
+      },
+    );
     return () => {
       alive = false;
     };
@@ -360,27 +362,47 @@ function RevealedView({ trip }: { trip: Trip }) {
         />
       </section>
 
-      {extra && (
-        <section className="mt-4 rounded-2xl bg-morgo-card p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="font-bold">이 도시, 이렇게 즐겨요</h2>
-            <span className="rounded-full bg-morgo-yellow-soft px-2.5 py-1 text-[11px] font-bold text-morgo-navy/70">
-              ✨ 추천
-            </span>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-            <div className="rounded-xl bg-morgo-mint-soft p-3">
-              <div className="text-[11px] text-morgo-navy/50">대표 관광지</div>
-              <div className="mt-0.5 font-semibold">
-                {extra.landmarkEmoji} {extra.landmark}
+      {horrorMode ? (
+        trip.horrorSpot && (
+          <section className="mt-4 rounded-2xl bg-morgo-navy p-5 text-white shadow-sm">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-morgo-yellow">이 도시의 공포 명소</h2>
+              <span className="rounded-full bg-morgo-pink px-2.5 py-1 text-[11px] font-bold text-white">
+                👻 실화
+              </span>
+            </div>
+            <div className="mt-3 rounded-xl bg-white/10 p-3">
+              <div className="text-[11px] text-white/50">추천 장소</div>
+              <div className="mt-0.5 font-semibold">🕯️ {trip.horrorSpot.name}</div>
+              <p className="mt-2 text-sm leading-relaxed text-white/75">
+                {trip.horrorSpot.description}
+              </p>
+            </div>
+          </section>
+        )
+      ) : (
+        extra && (
+          <section className="mt-4 rounded-2xl bg-morgo-card p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold">이 도시, 이렇게 즐겨요</h2>
+              <span className="rounded-full bg-morgo-yellow-soft px-2.5 py-1 text-[11px] font-bold text-morgo-navy/70">
+                ✨ 추천
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded-xl bg-morgo-mint-soft p-3">
+                <div className="text-[11px] text-morgo-navy/50">대표 관광지</div>
+                <div className="mt-0.5 font-semibold">
+                  {extra.landmarkEmoji} {extra.landmark}
+                </div>
+              </div>
+              <div className="rounded-xl bg-morgo-yellow-soft p-3">
+                <div className="text-[11px] text-morgo-navy/50">대표 음식</div>
+                <div className="mt-0.5 font-semibold">🍽️ {extra.food}</div>
               </div>
             </div>
-            <div className="rounded-xl bg-morgo-yellow-soft p-3">
-              <div className="text-[11px] text-morgo-navy/50">대표 음식</div>
-              <div className="mt-0.5 font-semibold">🍽️ {extra.food}</div>
-            </div>
-          </div>
-        </section>
+          </section>
+        )
       )}
 
       <section className="mt-6">
