@@ -24,26 +24,350 @@ body {
 }
 
 /*
- * 공포 모드 — 앱 전체 포인트 컬러를 리스킨. cream/card(밝은 배경)는 일부러 안 건드림:
- * 기존 text-morgo-navy(어두운 글자)가 밝은 배경 위에 얹히는 구조라 배경까지 어둡게 뒤집으면
- * 그 조합이 다 깨진다. 대신 navy를 더 검붉게, 포인트 컬러를 독성 그린/핏빛 레드/보라로 바꿔서
- * "분위기가 확 달라지는" 쪽으로 간다.
+ * 공포 모드 — 앱 전체를 다크 테마로 리스킨.
+ * 핵심은 토큰 뒤집기: 밝은 표면(cream/card/*-soft)은 전부 어둡게, 어두운 글자색(navy)은 밝게.
+ * navy 토큰은 (1) 본문 글자색 (2) 어두운 표면 배경 (3) 네온 버튼 위 글자색 세 역할을 겸한다.
+ * 밝게 뒤집으면 압도적으로 많은 (1) 본문 글자가 한 번에 해결되고,
+ * 소수인 (2)·(3) 지점만 아래 override 블록에서 개별로 되돌린다(컴포넌트는 손 안 댐).
+ * *-soft(연한 배경 칩)들도 다크 톤으로 낮춰야 그 위의 밝아진 글자가 읽힌다.
  */
 :root[data-theme="horror"] {
-  --color-morgo-yellow: #7cff3d;
-  --color-morgo-yellow-soft: #d9ffc2;
-  --color-morgo-navy: #0d0205;
+  --color-morgo-cream: #0a0510; /* 페이지 배경 — 검붉은 암흑 */
+  --color-morgo-card: #17111c; /* 카드/패널 — 살짝 밝은 암흑 */
+  --color-morgo-yellow: #7cff3d; /* 독성 그린 포인트 */
+  --color-morgo-yellow-soft: #16240e;
+  --color-morgo-navy: #ece2e8; /* (뒤집힘) 본문 글자 — 창백한 빛 */
   --color-morgo-navy-deep: #000000;
-  --color-morgo-pink: #b3122e;
-  --color-morgo-pink-soft: #ffd6dc;
-  --color-morgo-mint: #6b1f8f;
-  --color-morgo-mint-soft: #e6d2f2;
+  --color-morgo-pink: #b3122e; /* 핏빛 레드 */
+  --color-morgo-pink-soft: #2e0b12;
+  --color-morgo-mint: #6b1f8f; /* 보랏빛 */
+  --color-morgo-mint-soft: #23112f;
+}
+
+/*
+ * 뒤집기의 반작용 상쇄 — navy를 "어두운 표면"으로 쓰던 지점은 다시 어둡게.
+ * [data-theme] 속성 + 클래스 = 특이도(0,2,0)라 Tailwind 단일 클래스(0,1,0)를 이긴다.
+ */
+:root[data-theme="horror"] .bg-morgo-navy {
+  background-color: #050208;
+}
+/* 화면을 어둡게 덮던 오버레이/스크림도 밝아지지 않게 다시 어둡게 */
+:root[data-theme="horror"] .bg-morgo-navy\/85 {
+  background-color: rgba(2, 1, 5, 0.9);
+}
+:root[data-theme="horror"] .bg-morgo-navy\/70 {
+  background-color: rgba(2, 1, 5, 0.75);
+}
+:root[data-theme="horror"] .bg-morgo-navy\/50 {
+  background-color: rgba(2, 1, 5, 0.55);
+}
+/* 네온 그린(solid) 버튼 위 글자는 밝게 두면 안 보인다 → 다시 어둡게 (연한 -soft 칩은 제외) */
+:root[data-theme="horror"] .bg-morgo-yellow {
+  color: #050208;
 }
 
 /* 공포 모드: 캐릭터 일러스트에 으스스한 필터(새 그림 없이 기존 이미지를 재활용) */
 :root[data-theme="horror"] img[src*="character"] {
   filter: grayscale(0.55) sepia(0.3) hue-rotate(300deg) saturate(1.6) contrast(1.3)
     brightness(0.75);
+}
+
+/*
+ * 부모님과 테마 — 밝은 계열 유지, 차분·고대비·따뜻한 톤.
+ * navy를 어둡게 유지하므로(밝게 뒤집지 않음) 공포처럼 반작용 상쇄가 필요 없다.
+ * 네온 포인트를 따뜻한 앰버/테라코타로 낮추고, 본문 글씨를 살짝 키워 가독성 확보.
+ */
+:root[data-theme="parents"] {
+  --color-morgo-cream: #f4efe7; /* 따뜻한 크림 배경 */
+  --color-morgo-card: #ffffff;
+  --color-morgo-yellow: #e0912a; /* 네온→고대비 앰버 포인트 */
+  --color-morgo-yellow-soft: #f6e4c6;
+  --color-morgo-navy: #241b12; /* 본문 — 진한 브라운블랙(고대비) */
+  --color-morgo-navy-deep: #120d08;
+  --color-morgo-pink: #bf512b; /* 테라코타 */
+  --color-morgo-pink-soft: #f3dccf;
+  --color-morgo-mint: #47764f; /* 차분한 딥그린 */
+  --color-morgo-mint-soft: #d7e6db;
+}
+:root[data-theme="parents"] body {
+  font-size: 1.06rem; /* 부모님 가독성 — 기본 글씨 살짝 크게 */
+}
+
+/*
+ * 아기와 테마 — 파스텔·부드러운 톤. navy를 완전히 어둡게 두지 않고
+ * 부드러운 네이비로 낮춰 전체적으로 순한 느낌. 밝은 계열이라 반작용 상쇄 불필요.
+ */
+:root[data-theme="baby"] {
+  --color-morgo-cream: #eaf4ff; /* 맑고 밝은 하늘빛 배경 */
+  --color-morgo-card: #ffffff;
+  --color-morgo-yellow: #ffc41f; /* 쨍한 햇살 노랑 포인트 */
+  --color-morgo-yellow-soft: #fff0c2;
+  --color-morgo-navy: #1f3a5f; /* 또렷한 남색 본문(흐릿함 제거, 가독성↑) */
+  --color-morgo-navy-deep: #14283f;
+  --color-morgo-pink: #ff5c9a; /* 밝고 명쾌한 핑크 */
+  --color-morgo-pink-soft: #ffd9e8;
+  --color-morgo-mint: #12c48a; /* 상큼한 민트 */
+  --color-morgo-mint-soft: #c8f5e4;
+}
+
+/* 부모님 테마 로딩 모티프 — 나뭇잎/꽃잎이 바람에 흩날려 내려앉는 연출 */
+@keyframes leaf-fall {
+  0% {
+    transform: translateY(-25%) translateX(0) rotate(0deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(330%) translateX(var(--sway, 12px)) rotate(340deg);
+    opacity: 0;
+  }
+}
+
+/* 아이 테마 — 뽑힌 결과가 톡 튀어나오는 연출 */
+@keyframes gacha-pop {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* 아이 크레인 — 집힌 캡슐이 옮겨지는 동안 아슬아슬하게 흔들리는 연출 */
+@keyframes claw-wobble {
+  0%,
+  100% {
+    transform: translateX(-50%) rotate(-9deg);
+  }
+  50% {
+    transform: translateX(-50%) rotate(9deg);
+  }
+}
+
+/* 아이 테마 — 크레인이 놓은 캡슐이 배출구로 톡 떨어지는 연출 */
+@keyframes capsule-drop {
+  0% {
+    transform: translateY(-46px) scale(0.85);
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+  }
+  70% {
+    transform: translateY(6px) scale(1.02);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+/* 아이 가챠 — 결과 나올 때까지 캡슐이 통통 튀는 대기 애니메이션 */
+@keyframes capsule-bounce {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-14deg);
+  }
+  50% {
+    transform: translateY(-12px) rotate(14deg);
+  }
+}
+
+/* 부모 지도 — 결과 나올 때까지 마커가 지도 위를 훑고 다니는 대기 애니메이션 */
+@keyframes map-scan {
+  0% {
+    transform: translate(-62px, -46px) scale(1);
+  }
+  25% {
+    transform: translate(52px, -22px) scale(1.1);
+  }
+  50% {
+    transform: translate(30px, 44px) scale(1);
+  }
+  75% {
+    transform: translate(-44px, 24px) scale(1.1);
+  }
+  100% {
+    transform: translate(-62px, -46px) scale(1);
+  }
+}
+@keyframes marker-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+/* 부모 지도 — 꽃잎/나뭇잎이 지도 위에서 살랑살랑 떠 있는 대기 애니메이션 */
+@keyframes petal-sway {
+  from {
+    transform: translate(0, 0) rotate(-9deg);
+  }
+  to {
+    transform: translate(4px, 5px) rotate(11deg);
+  }
+}
+
+/* 부모 지도 — 입김을 모으는 동안 꽃잎이 파르르 떠는 연출 */
+@keyframes petal-tremble {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(-4deg);
+  }
+  50% {
+    transform: translate(-2px, 1px) rotate(6deg);
+  }
+}
+
+/* 부모 지도 — 꽃잎이 바람에 휩쓸려 날아가는 연출.
+   직선이 아니라: 훅 떠오르며 바람을 타고 → 출렁이며 실려가다 → 빙글빙글 돌며 화면 밖으로.
+   방향/거리/회전은 꽃잎마다 CSS 변수(--bx, --by, --spin)로 다르게 */
+@keyframes petal-blow {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+  22% {
+    transform: translate(calc(var(--bx) * 0.18), calc(var(--by) * 0.4 - 18px))
+      rotate(calc(var(--spin) * 0.3)) scale(1.08);
+    opacity: 1;
+  }
+  55% {
+    transform: translate(calc(var(--bx) * 0.55), calc(var(--by) * 0.8 + 10px))
+      rotate(calc(var(--spin) * 0.62)) scale(0.98);
+    opacity: 0.98;
+  }
+  78% {
+    transform: translate(calc(var(--bx) * 0.82), calc(var(--by) * 0.95 - 8px))
+      rotate(calc(var(--spin) * 0.85)) scale(0.88);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(var(--bx), var(--by)) rotate(var(--spin)) scale(0.7);
+    opacity: 0;
+  }
+}
+
+/* 부모 지도 — 다 불고 난 뒤 벚꽃잎이 위에서 잔잔히 흩날려 내리는 마무리 */
+@keyframes petal-fall {
+  0% {
+    transform: translateY(-12px) translateX(0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.9;
+  }
+  85% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(250px) translateX(var(--sway, 14px)) rotate(320deg);
+    opacity: 0;
+  }
+}
+
+/* 부모 지도 — 후— 불 때 바람 줄기가 지도를 훑고 지나가는 연출 */
+@keyframes gust-sweep {
+  0% {
+    transform: translateX(0) scale(0.8);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateX(-260px) scale(1.25);
+    opacity: 0;
+  }
+}
+
+/* 아이 캡슐 — 결과 기다리는 동안 캡슐이 들썩들썩 흔들리는 연출 */
+@keyframes capsule-shake {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  20% {
+    transform: translateX(-5px) rotate(-7deg);
+  }
+  40% {
+    transform: translateX(5px) rotate(6deg);
+  }
+  60% {
+    transform: translateX(-4px) rotate(-4deg);
+  }
+  80% {
+    transform: translateX(4px) rotate(5deg);
+  }
+}
+
+/* 아이 캡슐 — AI가 도는 동안 이음새에서 연기가 모락모락 피어오르는 연출 */
+@keyframes smoke-rise {
+  0% {
+    transform: translateY(0) translateX(0) scale(0.55);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-64px) translateX(var(--drift, 6px)) scale(1.9);
+    opacity: 0;
+  }
+}
+
+/* 아이 캡슐 — 연기 사이로 금빛 반짝이가 빙글 돌며 솟아오르는 연출 */
+@keyframes sparkle-rise {
+  0% {
+    transform: translateY(8px) rotate(0deg) scale(0.3);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  65% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-70px) translateX(var(--drift, 0px)) rotate(var(--tw, 220deg))
+      scale(1.15);
+    opacity: 0;
+  }
+}
+
+/* 아이 캡슐 — 캡슐 뒤에서 숨쉬듯 맥동하는 마법 오라 */
+@keyframes aura-pulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.3);
+    opacity: 0.85;
+  }
+}
+
+/* 아이 캡슐 — 뚜껑이 열리는 순간 터지는 빛 */
+@keyframes capsule-glow {
+  from {
+    transform: scale(0.4);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(2.6);
+    opacity: 0;
+  }
 }
 
 /* 스크롤은 되지만 스크롤바는 안 보이게 (모달용) */
@@ -64,6 +388,91 @@ body {
   to {
     transform: translate(-50%, -50%) scale(2.6);
     opacity: 0;
+  }
+}
+
+/* 깜짝 미션 놓쳤을 때 유령 점프스케어 — 확 튀어나오는 느낌 */
+@keyframes scare-pop {
+  0% {
+    transform: scale(1.25);
+    opacity: 0;
+    filter: brightness(2.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+/* 공포 모드 소환진(마법진) — 회전 / 획 그리기 / 발광 / 완료 플레어 / 룬 점멸 */
+@keyframes summon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes summon-spin-rev {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+@keyframes summon-draw {
+  from {
+    stroke-dashoffset: 1200;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes summon-glow {
+  0%,
+  100% {
+    opacity: 0.35;
+    filter: drop-shadow(0 0 2px currentColor);
+  }
+  50% {
+    opacity: 0.9;
+    filter: drop-shadow(0 0 9px currentColor);
+  }
+}
+@keyframes summon-flare {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  28% {
+    transform: scale(1.13);
+    filter: brightness(2.3);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+@keyframes summon-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  45% {
+    opacity: 0.3;
+  }
+  55% {
+    opacity: 0.85;
+  }
+}
+
+/* 일반 착지 타격감 — 짧고 가벼운 흔들림 */
+@keyframes dart-hit-shake {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  30% {
+    transform: translate(-2px, 1px);
+  }
+  60% {
+    transform: translate(2px, -1px);
   }
 }
 
