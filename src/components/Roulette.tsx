@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { generateChallenges } from "@/lib/roulette-ai";
 import { ROULETTE_FACES, spinRoulette } from "@/lib/seed";
-import { useMorgo } from "@/lib/store";
-import { MISSION_CATEGORY_LABELS, type Mission } from "@/lib/types";
+import { MISSION_CATEGORY_LABELS, type Mission, type TripTheme } from "@/lib/types";
 
 type Phase = "idle" | "spinning" | "result";
 
@@ -16,14 +15,16 @@ type Phase = "idle" | "spinning" | "result";
 export default function Roulette({
   cityId,
   excludeTitles = [],
+  theme = "normal",
   onAccept,
 }: {
   cityId: string;
   /** 이미 이 여행에서 나온 챌린지 제목(중복 방지) */
   excludeTitles?: string[];
+  /** 이 트립의 테마 — 전역 토글이 아니라 트립 기준으로 판단 (미션 톤 결정) */
+  theme?: TripTheme;
   onAccept: (mission: Mission) => void;
 }) {
-  const horrorMode = useMorgo((s) => s.horrorMode);
   const [phase, setPhase] = useState<Phase>("idle");
   const [face, setFace] = useState(ROULETTE_FACES[0]);
   const [result, setResult] = useState<Mission | null>(null);
@@ -41,7 +42,7 @@ export default function Roulette({
         cityId,
         [...used.current].slice(-40),
         10,
-        horrorMode,
+        theme,
       );
       for (const m of batch) {
         if (!used.current.has(m.title)) queue.current.push(m);
@@ -64,7 +65,7 @@ export default function Roulette({
       if (!used.current.has(m.title)) return m;
     }
     // 큐가 비었으면(아직 로딩 중이거나 AI 미설정) 로컬 덱으로 즉시 폴백
-    return spinRoulette(cityId, [...used.current], horrorMode);
+    return spinRoulette(cityId, [...used.current], theme);
   };
 
   const spin = () => {
@@ -94,9 +95,15 @@ export default function Roulette({
 
   return (
     <div className="rounded-3xl bg-morgo-navy p-6 text-center text-white shadow-lg shadow-morgo-navy/25">
-      <div className="text-sm font-bold text-morgo-yellow">🎰 도착 룰렛</div>
+      <div className="text-sm font-bold text-morgo-yellow">
+        {theme === "parents" || theme === "baby"
+          ? "🎲 미션 더 받기"
+          : "🎰 도착 룰렛"}
+      </div>
       <p className="mt-1 text-xs opacity-75">
-        뭘 시킬지는 룰렛 맘. 거절 못 함
+        {theme === "parents" || theme === "baby"
+          ? "원하면 미션을 더 뽑아 함께 도전해요"
+          : "뭘 시킬지는 룰렛 맘. 거절 못 함"}
       </p>
 
       <div
@@ -129,7 +136,7 @@ export default function Roulette({
               onClick={() => onAccept(result)}
               className="min-h-[48px] flex-[1.5] rounded-xl bg-morgo-yellow font-extrabold text-morgo-navy"
             >
-              🔥 간다 이판사판
+              🔥 이대로 간다
             </button>
           </div>
         </div>
@@ -140,7 +147,12 @@ export default function Roulette({
           disabled={phase === "spinning"}
           className="mt-6 min-h-[52px] w-full rounded-xl bg-morgo-yellow font-extrabold text-morgo-navy disabled:opacity-70"
         >
-          {phase === "spinning" ? "뭐가 걸릴지… 각오해" : "돌린다, 각오 됐냐 🎲"}
+          {phase === "spinning"
+            ? "미션 뽑는 중…"
+            : theme === "parents" || theme === "baby"
+              ? "미션 하나 더 뽑기 🎲"
+              : "돌린다, 룰렛한테 맡긴다 🎲"}
+          {/* spinning 라벨은 테마 공통으로 '미션 뽑는 중' — 도박 톤 최소화 */}
         </button>
       )}
     </div>

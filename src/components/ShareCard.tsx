@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import { useState } from "react";
+import CharacterImage from "@/components/CharacterImage";
 import { RARITY_LABELS } from "@/lib/rarity";
 import { cityLabel } from "@/lib/seed";
 import { renderShareImage } from "@/lib/shareImage";
@@ -92,7 +92,7 @@ export default function ShareCard({
             <img src={cover} alt="" className="h-full w-full object-cover opacity-80" />
           ) : (
             <div className="grid h-full place-items-center">
-              <Image
+              <CharacterImage
                 src="/character/luggage.png"
                 alt=""
                 width={90}

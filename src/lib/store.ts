@@ -14,13 +14,16 @@ import { CITIES, DEPARTURE_PRESETS, getCity } from "./seed";
 import type {
   CityPhoto,
   CityRecord,
+  Departure,
   HorrorSpot,
   Mission,
+  PlaceSpot,
   Rarity,
   Trip,
   TripChoice,
   TripConditions,
   TripMission,
+  TripTheme,
   User,
 } from "./types";
 
@@ -32,27 +35,46 @@ interface MorgoState {
   spentPoints: number;
   /** 연속으로 일반 등급만 나온 핀 던지기 횟수 (천장 시스템 — PITY_THRESHOLD 넘으면 다음은 레어 확정) */
   pityCount: number;
-  /** 공포 테마(전체 앱 색상 리스킨) 켜짐 여부 */
-  horrorMode: boolean;
-  toggleHorrorMode: () => void;
+  /** 현재 여행 테마 (첫 화면에서 선택 — 앱 색상 리스킨 + 룰렛/미션 톤). "normal"이면 기본 */
+  theme: TripTheme;
+  /** 첫 화면 테마 선택을 이미 마쳤는지 (false면 진입 시 선택 오버레이 노출) */
+  themeChosen: boolean;
+  setTheme: (theme: TripTheme) => void;
   /** 방문 도시 + 사진 기록 (명세서 15~16장) — cityId 키 */
   cityRecords: Record<string, CityRecord>;
   login: (user: User) => void;
   logout: () => void;
   /** 조건으로 여행 생성. 후보 도시가 없으면 null */
   createTrip: (conditions: TripConditions) => string | null;
-  /** 예약 없이 즉석 랜덤 여행 생성 → 바로 공개(도착) 상태 + 미션 배정. cityId/rarity는 지도 핀 던지기 연출 결과 */
-  createInstantTrip: (cityId?: string, rarity?: Rarity) => string;
+  /** 예약 없이 즉석 랜덤 여행 생성 → 바로 공개(도착) 상태 + 미션 배정. cityId/rarity는 지도 핀 던지기 연출 결과.
+   *  공포 모드 '공포 명소 소환'이면 소환된 명소(horrorSpot)를, 현재 위치를 잡았으면 출발지(departure)를 함께 넘긴다 */
+  createInstantTrip: (
+    cityId?: string,
+    rarity?: Rarity,
+    horrorSpot?: HorrorSpot,
+    departure?: Departure,
+  ) => string;
   setChoices: (tripId: string, choices: TripChoice[]) => void;
   /** 테스트 결제 + 가짜 예약 생성 (명세서 12장 시뮬레이션) */
   confirmBooking: (tripId: string) => void;
   /** 공개 시각 도달 시 상태 전환 + 미션 할당. 개발용 강제 공개 포함 */
   reveal: (tripId: string, opts?: { force?: boolean }) => boolean;
   cancelTrip: (tripId: string) => void;
+  /** 여행 내역에서 완전히 삭제 (목록에서 제거) */
+  deleteTrip: (tripId: string) => void;
+  /** 모든 데이터 초기화 — 여행·방문기록·포인트를 전부 날린다 (유저/테마는 유지) */
+  resetAll: () => void;
   /** 여행 완료 처리 → 방문 도시 등록 (명세서 15.3) */
   completeTrip: (tripId: string) => void;
+  /** 체크아웃 날짜가 지난 진행 중 여행을 자동 종료.
+   *  미션을 전부 성공했으면 COMPLETED(방문 기록 등록), 하나라도 못 했으면 FAILED */
+  expireTrips: () => void;
   /** 도착 룰렛 결과를 여행 미션으로 추가 */
   addTripMission: (tripId: string, mission: Mission) => void;
+  /** 친구 초대 방을 만든 뒤 그 코드를 여행에 저장 (재생성 방지) */
+  setTripRoomCode: (tripId: string, roomCode: string) => void;
+  /** 목적지 주변 추천 장소 저장 (계획형 트립, 1회 생성) */
+  setTripNearby: (tripId: string, nearby: PlaceSpot[]) => void;
   /** AI가 생성한 시작 미션 세트를 저장 (공개 화면 마운트 시 1회). 공포 모드면 spot도 함께 저장 */
   setTripMissions: (
     tripId: string,
@@ -123,8 +145,9 @@ export const useMorgo = create<MorgoState>()(
       bookingSeq: 1,
       spentPoints: 0,
       pityCount: 0,
-      horrorMode: false,
-      toggleHorrorMode: () => set({ horrorMode: !get().horrorMode }),
+      theme: "normal",
+      themeChosen: false,
+      setTheme: (theme) => set({ theme, themeChosen: true }),
       cityRecords: {},
 
       login: (user) => set({ user }),
@@ -142,12 +165,14 @@ export const useMorgo = create<MorgoState>()(
           cityId: plan.cityId,
           offerIds: plan.offerIds,
           choices: [],
+          theme: get().theme,
         };
         set({ trips: [trip, ...get().trips] });
         return id;
       },
 
-      createInstantTrip: (cityId, rarity) => {
+      createInstantTrip: (cityId, rarity, horrorSpot, departure) => {
+        const currentTheme = get().theme;
         const city =
           (cityId ? getCity(cityId) : undefined) ??
           CITIES[Math.floor(Math.random() * CITIES.length)];
@@ -158,7 +183,8 @@ export const useMorgo = create<MorgoState>()(
           createdAt: new Date().toISOString(),
           status: "REVEALED",
           conditions: {
-            departure: DEPARTURE_PRESETS[0],
+            // 현재 위치를 잡았으면 그 출발지, 못 잡았으면 프리셋
+            departure: departure ?? DEPARTURE_PRESETS[0],
             checkInDate: today,
             checkOutDate: today,
             adultCount: 2,
@@ -174,6 +200,14 @@ export const useMorgo = create<MorgoState>()(
           offerIds: [],
           choices: [],
           rarity,
+          // 미리 정해진 목적지(spot)를 테마에 맞는 필드로 저장.
+          //  - 공포: horrorSpot (필수 방문 + 안전 경고 UI)
+          //  - 부모/아이: themeSpot (그 관광지/체험관으로 가는 여행)
+          // (없으면 공개 화면에서 AI가 찾음)
+          horrorSpot: currentTheme === "horror" ? horrorSpot : undefined,
+          themeSpot: currentTheme !== "horror" ? horrorSpot : undefined,
+          // 생성 시점 테마를 여행에 고정 → 나중에 테마를 바꿔도 이 여행 미션 톤은 유지
+          theme: currentTheme,
           // 미션은 공개 화면 진입 시 AI가 그 자리에서 생성 (setTripMissions)
         };
         set({ trips: [trip, ...get().trips] });
@@ -244,10 +278,23 @@ export const useMorgo = create<MorgoState>()(
           ),
         }),
 
+      deleteTrip: (tripId) =>
+        set({ trips: get().trips.filter((t) => t.id !== tripId) }),
+
+      resetAll: () =>
+        set({
+          trips: [],
+          cityRecords: {},
+          spentPoints: 0,
+          pityCount: 0,
+          bookingSeq: 1,
+        }),
+
       completeTrip: (tripId) => {
         const { trips, cityRecords } = get();
         const trip = trips.find((t) => t.id === tripId);
-        if (!trip || trip.status === "COMPLETED") return;
+        // 이미 끝난(완료/실패) 여행은 다시 완료 처리 불가
+        if (!trip || trip.status === "COMPLETED" || trip.status === "FAILED") return;
         set({
           trips: trips.map((t) =>
             t.id === tripId ? { ...t, status: "COMPLETED" } : t,
@@ -255,6 +302,42 @@ export const useMorgo = create<MorgoState>()(
           cityRecords: touchCity(cityRecords, trip.cityId),
         });
       },
+
+      expireTrips: () => {
+        const today = todayStr();
+        const { trips, cityRecords } = get();
+        let records = cityRecords;
+        let changed = false;
+        const next = trips.map((t): Trip => {
+          if (t.status !== "REVEALED" && t.status !== "TRIP_IN_PROGRESS") return t;
+          // YYYY-MM-DD 문자열 비교 — 체크아웃 당일까지는 진행 중, 다음날부터 종료
+          if (t.conditions.checkOutDate >= today) return t;
+          changed = true;
+          const missions = t.missions ?? [];
+          const allPassed =
+            missions.length > 0 && missions.every((m) => m.status === "PASSED");
+          if (allPassed) {
+            records = touchCity(records, t.cityId);
+            return { ...t, status: "COMPLETED" };
+          }
+          return { ...t, status: "FAILED" };
+        });
+        if (changed) set({ trips: next, cityRecords: records });
+      },
+
+      setTripRoomCode: (tripId, roomCode) =>
+        set({
+          trips: get().trips.map((t) =>
+            t.id === tripId ? { ...t, roomCode } : t,
+          ),
+        }),
+
+      setTripNearby: (tripId, nearby) =>
+        set({
+          trips: get().trips.map((t) =>
+            t.id === tripId ? { ...t, nearby } : t,
+          ),
+        }),
 
       setTripMissions: (tripId, missions, horrorSpot) =>
         set({
@@ -375,7 +458,23 @@ export const useMorgo = create<MorgoState>()(
         });
       },
     }),
-    { name: "morgo-store" },
+    {
+      name: "morgo-store",
+      version: 1,
+      // v0(불리언 horrorMode) → v1(theme enum) 마이그레이션
+      migrate: (persisted, version) => {
+        const state = persisted as Record<string, unknown> | undefined;
+        if (state && version < 1) {
+          if (state.theme === undefined) {
+            state.theme = state.horrorMode ? "horror" : "normal";
+          }
+          delete state.horrorMode;
+          // 기존 유저는 이미 앱을 쓰던 사람 → 선택 오버레이로 다시 방해하지 않음
+          if (state.themeChosen === undefined) state.themeChosen = true;
+        }
+        return state as unknown as MorgoState;
+      },
+    },
   ),
 );
 

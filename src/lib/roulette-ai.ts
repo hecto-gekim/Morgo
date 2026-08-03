@@ -4,7 +4,7 @@
 // 받아오고, 키가 없거나 오류면 로컬 덱(spinRoulette)으로 폴백한다.
 
 import { getCity, getCityExtra, landmarkMissionOf, spinRoulette } from "./seed";
-import type { HorrorSpot, Mission, Rarity, TripMission } from "./types";
+import type { HorrorSpot, Mission, Rarity, TripMission, TripTheme } from "./types";
 
 let seq = 0;
 const uid = () => `spin-${Date.now().toString(36)}-${seq++}`;
@@ -14,12 +14,12 @@ function localBatch(
   cityId: string,
   exclude: string[],
   count: number,
-  horror = false,
+  theme: TripTheme = "normal",
 ): Mission[] {
   const used = new Set(exclude);
   const out: Mission[] = [];
   for (let i = 0; i < count; i++) {
-    const m = spinRoulette(cityId, [...used], horror);
+    const m = spinRoulette(cityId, [...used], theme);
     used.add(m.title);
     out.push({ ...m, id: uid() });
   }
@@ -41,11 +41,12 @@ async function fetchRouletteBatch(
   cityId: string,
   exclude: string[],
   count: number,
-  horror: boolean,
+  theme: TripTheme,
 ): Promise<RouletteBatch> {
+  const horror = theme === "horror";
   const city = getCity(cityId);
   const extra = getCityExtra(cityId);
-  if (!city) return { missions: localBatch(cityId, exclude, count, horror) };
+  if (!city) return { missions: localBatch(cityId, exclude, count, theme) };
 
   try {
     const res = await fetch("/api/roulette", {
@@ -58,25 +59,27 @@ async function fetchRouletteBatch(
         landmark: extra?.landmark,
         exclude,
         count,
+        theme,
+        // 구버전 서버 호환 — theme 무시하는 서버도 공포 여부는 알아듣게
         horror,
       }),
     });
     const data = await res.json();
     if (!res.ok || data?.configured === false || !Array.isArray(data.challenges)) {
-      return { missions: localBatch(cityId, exclude, count, horror) };
+      return { missions: localBatch(cityId, exclude, count, theme) };
     }
     const challenges = (data.challenges as Omit<Mission, "id" | "cityId">[])
       .filter((c) => c.title)
       .map((c) => ({ ...c, id: uid(), cityId }) as Mission);
     const missions =
-      challenges.length > 0 ? challenges : localBatch(cityId, exclude, count, horror);
+      challenges.length > 0 ? challenges : localBatch(cityId, exclude, count, theme);
     const spot: HorrorSpot | undefined =
       data.spot?.name && data.spot?.description
         ? { name: data.spot.name, description: data.spot.description }
         : undefined;
     return { missions, spot };
   } catch {
-    return { missions: localBatch(cityId, exclude, count, horror) };
+    return { missions: localBatch(cityId, exclude, count, theme) };
   }
 }
 
@@ -88,9 +91,9 @@ export async function generateChallenges(
   cityId: string,
   exclude: string[],
   count: number,
-  horror = false,
+  theme: TripTheme = "normal",
 ): Promise<Mission[]> {
-  return (await fetchRouletteBatch(cityId, exclude, count, horror)).missions;
+  return (await fetchRouletteBatch(cityId, exclude, count, theme)).missions;
 }
 
 /** 레어 등급 이상 당첨 시 추가되는 진짜 보너스 미션 (포인트 실지급) */
@@ -125,6 +128,32 @@ interface StartMissions {
 }
 
 /**
+ * 미리 정해진 목적지로 "반드시 방문(사진 인증)" 필수 미션을 만든다.
+ * 공포는 안전 경고 포함 ☠️, 부모/아이 등은 따뜻한 관광지 방문 톤으로.
+ */
+function makeVisitMission(spot: HorrorSpot, theme: TripTheme): Mission {
+  const id = `visit-${Date.now().toString(36)}`;
+  if (theme === "horror") {
+    return {
+      id,
+      title: `☠️ 필수: ${spot.name} 다녀오기`,
+      description: `오늘의 공포 목적지 「${spot.name}」! 그곳까지 가서 인증하라. 📸 인증 기준: ${spot.name}임을 알 수 있는 간판·표지·특징 구조물이 프레임에 또렷이 보여야 함. 단, 건물·시설 안엔 절대 들어가지 말고(무단진입·폐가 내부 금지) 밝은 도로변 등 바깥 공개된 곳에서만 찍을 것.`,
+      category: "HORROR",
+      emoji: "🪦",
+      points: 40,
+    };
+  }
+  return {
+    id,
+    title: `📍 필수: ${spot.name} 다녀오기`,
+    description: `오늘의 목적지 「${spot.name}」! 그곳에 가서 인증 사진을 남겨보세요. 📸 인증 기준: ${spot.name}임을 알 수 있는 간판·표지·대표 풍경이 프레임에 보이게 찍으세요.`,
+    category: "LANDMARK",
+    emoji: "📍",
+    points: 35,
+  };
+}
+
+/**
  * 여행 공개 시점에 배정되는 시작 미션.
  * 관광지 인증샷 1개(있으면 고정) + AI가 그때그때 새로 뽑는 자극적인 챌린지(도착 룰렛과 동일 엔진) 3~4개.
  * 시드에 없는 전국 시군구는 관광지 데이터가 없을 수 있어, 그만큼 AI 챌린지를 더 받아 총 4개를 맞춘다.
@@ -134,19 +163,32 @@ interface StartMissions {
 export async function generateStartMissions(
   cityId: string,
   rarity?: Rarity,
-  horror = false,
+  theme: TripTheme = "normal",
+  presetSpot?: HorrorSpot,
 ): Promise<StartMissions> {
-  const landmark = horror ? null : landmarkMissionOf(cityId);
-  const aiCount = landmark ? 3 : 4;
-  const { missions: rest, spot } = await fetchRouletteBatch(
+  const hasPreset = !!presetSpot;
+  // 목적지가 미리 정해졌으면(공포 소환 / 부모·아이 장소 뽑기) 그 방문이 곧 관광지이므로
+  // 자동 관광지 미션은 생략한다.
+  const landmark = theme === "horror" || hasPreset ? null : landmarkMissionOf(cityId);
+  // 필수 방문 미션이 한 자리를 차지하므로 AI 챌린지를 하나 줄인다
+  const aiCount = (landmark ? 3 : 4) - (hasPreset ? 1 : 0);
+  const { missions: rest, spot: foundSpot } = await fetchRouletteBatch(
     cityId,
     landmark ? [landmark.title] : [],
-    aiCount,
-    horror,
+    Math.max(aiCount, 1),
+    theme,
   );
-  const missions = landmark ? [landmark, ...rest] : rest;
+  // 미리 정해진 목적지 우선(소환/장소 뽑기), 없으면 AI가 찾은 명소(공포)
+  const spot = presetSpot ?? foundSpot;
+  const visit = spot ? makeVisitMission(spot, theme) : null;
   const bonus = bonusMissionFor(rarity, getCity(cityId)?.name ?? "이 도시");
-  const all = bonus ? [...missions, bonus] : missions;
+  // 필수 방문 미션을 맨 앞에 고정
+  const all = [
+    ...(visit ? [visit] : []),
+    ...(landmark ? [landmark] : []),
+    ...rest,
+    ...(bonus ? [bonus] : []),
+  ];
   return {
     missions: all.map((mission) => ({ mission, status: "ASSIGNED" as const })),
     spot,

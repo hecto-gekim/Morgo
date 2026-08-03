@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# 친구 초대 방 로컬 파일 저장소 (서버 파일 스토어)
+/.data
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

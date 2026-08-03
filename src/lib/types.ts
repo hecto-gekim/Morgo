@@ -76,6 +76,8 @@ export type TripStatus =
   | "REVEALED"
   | "TRIP_IN_PROGRESS"
   | "COMPLETED"
+  /** 여행 날짜가 지났는데 미션을 다 못 끝냄 (자동 처리) */
+  | "FAILED"
   | "CANCELLED";
 
 export const TRIP_STATUS_LABELS: Record<TripStatus, string> = {
@@ -89,6 +91,7 @@ export const TRIP_STATUS_LABELS: Record<TripStatus, string> = {
   REVEALED: "목적지 공개",
   TRIP_IN_PROGRESS: "여행 중",
   COMPLETED: "여행 완료",
+  FAILED: "여행 실패",
   CANCELLED: "취소됨",
 };
 
@@ -171,6 +174,12 @@ export interface HorrorSpot {
   description: string;
 }
 
+/** 부모/아이 등 테마에서 미리 뽑아둔 실존 목적지 (부모=절·수목원 등 관광지, 아이=박물관·체험관 등) */
+export interface PlaceSpot {
+  name: string;
+  description: string;
+}
+
 export interface Trip {
   id: string;
   createdAt: string;
@@ -190,6 +199,14 @@ export interface Trip {
   rarity?: Rarity;
   /** 공포 모드로 공개된 여행이면, AI가 찾아낸 이 도시의 공포 명소 */
   horrorSpot?: HorrorSpot;
+  /** 부모/아이 테마로 미리 뽑아 정해진 목적지 장소 (그곳으로 가는 여행) */
+  themeSpot?: PlaceSpot;
+  /** 목적지 주변에 갈 만한 추천 장소 (계획형 트립, 여행 화면 진입 시 1회 생성) */
+  nearby?: PlaceSpot[];
+  /** 이 여행이 만들어질 때의 테마 (미션 톤 결정). 없으면 구버전 여행 → "normal"(공포 명소 있으면 "horror") 취급 */
+  theme?: TripTheme;
+  /** 친구 초대 방을 만들었으면 그 방 코드 (재생성 방지 + '방 보기') */
+  roomCode?: string;
 }
 
 export interface User {
@@ -198,6 +215,23 @@ export interface User {
   /** 로그인 건너뛰기로 시작한 임시 사용자 (마이 페이지에서 나중에 로그인 가능) */
   isGuest?: boolean;
 }
+
+// ── 여행 테마 (첫 화면에서 선택 — 앱 색상 리스킨 + 룰렛/미션 톤 결정) ──────────
+export type TripTheme = "normal" | "horror" | "parents" | "baby";
+
+export const THEME_LABELS: Record<TripTheme, string> = {
+  normal: "일반",
+  horror: "공포",
+  parents: "부모님과",
+  baby: "아기와",
+};
+
+export const THEME_EMOJI: Record<TripTheme, string> = {
+  normal: "🎯",
+  horror: "😱",
+  parents: "🧡",
+  baby: "🍼",
+};
 
 // ── 여행 미션 (명세서 17~18장) ──────────────────────────────
 
@@ -286,4 +320,52 @@ export interface MorgoEvent {
   endsAt: string; // ISO
   reward: string;
   effect: EventEffect;
+}
+
+// ── 친구 초대 방 (미션 공유 + 정산) ─────────────────────────
+// 로그인 없이 링크/방 코드로 참여. 서버 공유 저장소(파일)에 방 하나로 보관.
+
+export interface RoomMember {
+  /** 브라우저가 생성해 보관하는 id — 다시 들어와도 같은 멤버로 인식 */
+  id: string;
+  name: string;
+  joinedAt: string; // ISO
+}
+
+/** 방에 공유되는 미션(여행 미션의 가벼운 스냅샷) */
+export interface RoomMission {
+  id: string;
+  title: string;
+  emoji: string;
+  points: number;
+}
+
+export interface RoomExpense {
+  id: string;
+  /** 결제한 멤버 id */
+  payerId: string;
+  /** 금액(원) */
+  amount: number;
+  label: string;
+  /** 특정 공유 미션과 연결된 지출이면 그 미션 id */
+  missionId?: string;
+  createdAt: string; // ISO
+}
+
+export interface Room {
+  code: string;
+  createdAt: string; // ISO
+  cityId: string;
+  cityName: string;
+  theme: TripTheme;
+  missions: RoomMission[];
+  members: RoomMember[];
+  expenses: RoomExpense[];
+}
+
+/** 균등 정산 결과 — fromId가 toId에게 amount원 보내면 청산 */
+export interface Settlement {
+  fromId: string;
+  toId: string;
+  amount: number;
 }

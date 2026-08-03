@@ -3,6 +3,7 @@ import type {
   City,
   Departure,
   Mission,
+  TripTheme,
 } from "./types";
 
 // 출발지 프리셋 (Phase 1: 주소 검색 대신 프리셋 + 직접 입력 라벨)
@@ -143,6 +144,56 @@ export function cityLabel(city: Pick<City, "name" | "provinceName">): string {
 /** 핀/화살 뽑기 대상 전체 (시드 10곳 + 전국 캐시, 서울 제외·광역시는 시 단위로 뭉쳐짐) */
 export function getThrowablePool(): City[] {
   return [...CITIES, ...REGION_CITY_CACHE.values()];
+}
+
+// 검색 결과의 도/광역시 표기(줄임말·구명칭 포함)를 레지스트리 정식 명칭으로 정규화
+const PROVINCE_ALIASES: Record<string, string> = {
+  서울: "서울특별시", 서울시: "서울특별시",
+  부산: "부산광역시", 대구: "대구광역시", 인천: "인천광역시",
+  광주: "광주광역시", 대전: "대전광역시", 울산: "울산광역시",
+  세종: "세종특별자치시", 세종시: "세종특별자치시",
+  경기: "경기도",
+  강원: "강원특별자치도", 강원도: "강원특별자치도",
+  충북: "충청북도", 충남: "충청남도",
+  전북: "전북특별자치도", 전라북도: "전북특별자치도",
+  전남: "전라남도",
+  경북: "경상북도", 경남: "경상남도",
+  제주: "제주특별자치도", 제주도: "제주특별자치도",
+};
+
+/** 도/광역시 명칭의 핵심부만 남긴다(비교용). "충청남도"→"충청남", "부산광역시"→"부산" */
+function provinceCore(p: string): string {
+  return p.replace(/\s/g, "").replace(/(특별자치도|특별자치시|특별시|광역시|자치도|도|시)$/g, "");
+}
+
+function normalizeProvince(p: string): string {
+  const t = (p ?? "").replace(/\s/g, "");
+  return PROVINCE_ALIASES[t] ?? t;
+}
+
+/**
+ * 검색으로 나온 공포 명소의 소재지(도/광역시 + 시·군·구)를 뽑기 풀의 실제 도시로 매칭한다.
+ * 레지스트리가 로드된 클라이언트에서 호출해야 전국 시군구를 찾을 수 있다.
+ * 광역시는 구 단위 대신 시 전체로 뭉쳐 있으므로 도(광역시)만 맞으면 매칭한다.
+ */
+export function findCityByRegion(
+  province: string,
+  cityName: string,
+): City | undefined {
+  const prov = normalizeProvince(province);
+  const provCore = provinceCore(prov);
+  const isMetro = /(특별시|광역시|특별자치시)$/.test(prov);
+  const nm = (cityName ?? "").replace(/\s/g, "");
+  const nmCore = nm.replace(/(시|군|구)$/g, "");
+
+  return getThrowablePool().find((c) => {
+    if (provinceCore(c.provinceName) !== provCore) return false;
+    if (isMetro) return true; // 광역시 전체가 뽑기 풀에서 하나의 도시
+    if (!nm) return false;
+    const cn = c.name.replace(/\s/g, "");
+    const cnCore = cn.replace(/(시|군|구)$/g, "");
+    return cn === nm || cnCore === nmCore || cn.startsWith(nm) || nm.startsWith(cn);
+  });
 }
 
 // 도시별 시드 숙소 (Phase 2에서 네이버 지역 검색 API + 관리자 검수로 대체)
@@ -588,34 +639,71 @@ const PLACE_CHALLENGES: Omit<Mission, "id" | "cityId">[] = [
   { title: "{place} 최고가 메뉴", description: "{place}에서 제일 비싼 메뉴에 도전해보세요!", category: "PLACE", emoji: "💸", points: 35 },
 ];
 
-// 괴담/공포 컨셉 챌린지 — 실제 폐가·흉가 진입 없이, 안전한 범위에서만 쫄깃하게
+// 괴담/공포 컨셉 챌린지 — 실제 폐가·흉가 진입 없이, 혼자서 안전하게, "분위기와 텐션"으로만 쫄깃하게
 const HORROR_CHALLENGES: Omit<Mission, "id">[] = [
-  { title: "심야 괴담 검색", description: "이 지역 괴담을 검색해서 하나 읽고 제목을 스크린샷하세요.", category: "HORROR", emoji: "👻", points: 25 },
-  { title: "가장 어두운 골목", description: "안전한 대로변에서, 제일 어둡고 으스스해 보이는 골목을 사진으로만 찍어보세요.", category: "HORROR", emoji: "🌑", points: 25 },
-  { title: "동네 괴담 물어보기", description: "지나가는 분께 이 동네에 떠도는 무서운 이야기가 있는지 물어보세요.", category: "HORROR", emoji: "🗣️", points: 30 },
-  { title: "문 닫은 가게 앞에서", description: "폐업한 가게 간판 앞에서(안에는 들어가지 말고) 인증샷을 남기세요.", category: "HORROR", emoji: "🚪", points: 25 },
-  { title: "길어진 그림자", description: "내 그림자가 유난히 길고 이상하게 늘어진 순간을 찍어보세요.", category: "HORROR", emoji: "🕯️", points: 20 },
-  { title: "제일 무서운 표정 짓기", description: "지금 낼 수 있는 가장 무서운(또는 놀란) 표정을 사진으로 남겨보세요.", category: "HORROR", emoji: "😱", points: 25 },
-  { title: "심야 편의점 미션", description: "가장 가까운 편의점에서 야식을 사고, 계산대 풍경을 찍어보세요.", category: "HORROR", emoji: "🏪", points: 20 },
-  { title: "안개 낀 듯한 사진", description: "뿌옇거나 어두워서 분위기 있는 사진 한 장을 남겨보세요.", category: "HORROR", emoji: "🌫️", points: 20 },
+  { title: "정각 4시 44분", description: "정확히 4시 44분(밤이면 새벽 4:44)에 시계나 폰 시간을 화면에 띄워 인증하세요. 44는 죽을 사(死)… 1분만 늦어도 실패.", category: "HORROR", emoji: "🕓", points: 35 },
+  { title: "뒤돌아보지 마", description: "제자리에서 뒤로 33걸음 걷는 동안 절대 뒤돌아보지 마세요. 다 걸은 뒤 정면을 찍어 인증. 등 뒤에 뭐가 있었을지는… 몰라도 됩니다.", category: "HORROR", emoji: "👣", points: 30 },
+  { title: "유리에 비친 나", description: "밤에 어두운 유리창·거울에 비친 내 모습을 찍으세요. 반사 속에 나 말고 다른 게 없는지 확인은… 하지 마세요.", category: "HORROR", emoji: "🪞", points: 30 },
+  { title: "불 꺼진 창문 세기", description: "한 건물에서 불이 전부 꺼진 캄캄한 창문을 찾아, 그 창을 향해 한 장 찍으세요. 저 안엔 정말 아무도 없을까요.", category: "HORROR", emoji: "🪟", points: 25 },
+  { title: "13 또는 4를 찾아라", description: "주변에서 숫자 '4'나 '13'을 찾아 사진에 담으세요. 층수, 방 번호, 버스… 눈에 띄기 시작하면 계속 보입니다.", category: "HORROR", emoji: "🔢", points: 25 },
+  { title: "10초 정적 녹음", description: "가장 조용하고 어둑한 곳에서 눈을 감고 10초간 소리를 녹음하세요. 재생했을 때… 내 숨소리만 들리길.", category: "HORROR", emoji: "🎙️", points: 30 },
+  { title: "가로등 사이 어둠", description: "가로등 불빛이 닿지 않는 딱 그 틈, 가장 짙은 어둠을 향해 한 장 찍으세요. (안전한 밝은 자리에 서서!)", category: "HORROR", emoji: "🌑", points: 25 },
+  { title: "괴담 한 편 정주행", description: "이 지역 괴담을 하나 찾아 끝까지 읽고, 가장 소름 돋은 문장을 스크린샷하세요.", category: "HORROR", emoji: "📖", points: 25 },
+  { title: "이 동네 공포 명소", description: "이 지역에서 소문난 으스스한 장소 근처까지만 가보세요. 폐가·흉가·사유지 안엔 절대 들어가지 말고, 밝은 도로변 바깥에서만 인증!", category: "HORROR", emoji: "🪦", points: 35 },
+  { title: "길어진 그림자", description: "내 그림자가 유난히 길고 기괴하게 늘어진 순간을 포착하세요. 그림자가 나보다 먼저 움직인 건 기분 탓입니다.", category: "HORROR", emoji: "🕯️", points: 20 },
 ];
 
+// 부모님과 여행 덱 — 효도·추억·실용 위주의 어른스러운 미션 (유치하지 않게)
+const PARENTS_CHALLENGES: Omit<Mission, "id">[] = [
+  { title: "부모님과 같은 프레임", description: "지나가는 분께 부탁드려 부모님과 나란히 한 장. 셀카 말고 제대로 된 사진으로 남겨보세요.", category: "DARE", emoji: "👨‍👩‍👧", points: 30 },
+  { title: "부모님 최애 메뉴 대접", description: "부모님이 드시고 싶은 메뉴를 여쭤보고, 오늘 한 끼는 그걸로 대접해드리세요.", category: "DARE", emoji: "🍚", points: 30 },
+  { title: "옛날 이야기 하나", description: "부모님 젊었을 적 이야기 하나를 여쭤 듣고, 가장 인상 깊은 한 문장을 메모해두세요.", category: "DARE", emoji: "📖", points: 30 },
+  { title: "부모님 인생샷 찍어드리기", description: "이 지역 명소를 배경으로 부모님 독사진을 제일 잘 나오게 찍어드리세요.", category: "DARE", emoji: "📸", points: 25 },
+  { title: "지역 특산 간식 사드리기", description: "이 동네 특산물이나 주전부리를 하나 사서 부모님과 나눠 드세요.", category: "DARE", emoji: "🍡", points: 25 },
+  { title: "천천히 함께 걷기", description: "부모님 걸음에 맞춰 10분간 천천히 산책하며 이야기를 나눠보세요.", category: "DARE", emoji: "🚶", points: 20 },
+  { title: "찻집에서 차 한잔", description: "전통찻집이나 조용한 카페에서 부모님과 마주 앉아 차 한잔의 여유를 가지세요.", category: "DARE", emoji: "🍵", points: 20 },
+  { title: "부모님 기념품 골라드리기", description: "부모님께 어울릴 기념품을 직접 골라 선물해드리세요.", category: "DARE", emoji: "🎁", points: 25 },
+  { title: "편의 지점 미리 파악", description: "화장실·벤치·약국 위치를 미리 확인해, 부모님이 편하게 다니실 동선을 챙기세요.", category: "DARE", emoji: "🧭", points: 20 },
+  { title: "부모님 추천곡 듣기", description: "부모님이 좋아하시는 옛 노래를 하나 여쭤 함께 들어보세요.", category: "DARE", emoji: "🎵", points: 15 },
+];
+
+// 아기와 여행 덱 — 안전·편의 시설 위주의 실용 미션
+const BABY_CHALLENGES: Omit<Mission, "id">[] = [
+  { title: "수유실·기저귀대 찾기", description: "근처 수유실이나 기저귀 교환대가 있는 곳을 찾아 위치를 확인·인증하세요.", category: "DARE", emoji: "🍼", points: 30 },
+  { title: "아기 의자 있는 식당", description: "유아용 의자가 있는 식당을 골라 편하게 식사하세요.", category: "DARE", emoji: "🪑", points: 25 },
+  { title: "그늘진 산책로 찾기", description: "유모차가 다니기 좋고 그늘진 산책로를 찾아 아기와 걸어보세요.", category: "DARE", emoji: "🌳", points: 25 },
+  { title: "아기 눈높이 한 컷", description: "아기 눈높이로 내려가 아기의 시선이 담긴 사진 한 장을 남겨보세요.", category: "DARE", emoji: "📷", points: 20 },
+  { title: "안전 지점 미리 확인", description: "근처 약국이나 응급실 위치를 미리 확인해두세요. 만일을 대비한 안심 미션.", category: "DARE", emoji: "🏥", points: 25 },
+  { title: "낮잠 명당 확보", description: "아기가 편히 낮잠 잘 수 있는 조용하고 그늘진 자리를 찾아보세요.", category: "DARE", emoji: "😴", points: 20 },
+  { title: "유모차 접근 명소", description: "유모차로 편히 들어갈 수 있는 명소를 골라 아기와 함께 인증하세요.", category: "DARE", emoji: "🚼", points: 25 },
+  { title: "아기 짐 점검", description: "기저귀·물티슈·여벌 옷이 충분한지 한 번 점검하고 사진으로 남겨두세요.", category: "DARE", emoji: "🎒", points: 15 },
+  { title: "아기 간식 타임", description: "아기 이유식이나 간식을 챙겨 정해진 시간에 맞춰 먹여보세요.", category: "DARE", emoji: "🥣", points: 15 },
+  { title: "좋아하는 색 찾기", description: "아기가 좋아하는 색이나 사물을 주변에서 찾아 보여주고 반응을 담아보세요.", category: "DARE", emoji: "🎈", points: 20 },
+];
+
+/** 테마별 기본 덱 (공포는 별도 경로) */
+function themeDeck(theme: TripTheme): Omit<Mission, "id">[] {
+  if (theme === "parents") return PARENTS_CHALLENGES;
+  if (theme === "baby") return BABY_CHALLENGES;
+  return DARE_CHALLENGES;
+}
+
 /**
- * 도착 룰렛 스핀(로컬 폴백 — AI 미사용 시). 병맛 행동 60% · 도시 장소 25% · 괴담 15%.
- * horror=true(공포 모드)면 괴담 덱에서만 뽑는다.
+ * 도착 룰렛 스핀(로컬 폴백 — AI 미사용 시). 일반/부모님/아기 모드는 테마 덱 75% · 도시 장소 25%.
+ * theme="horror"(공포 트립)일 때만 괴담 덱에서 뽑는다 → 일반 트립엔 절대 공포 미션이 안 뜬다.
  * exclude 에 담긴 제목은 가급적 피해 뽑아 중복을 줄인다.
  */
 export function spinRoulette(
   cityId: string,
   exclude: string[] = [],
-  horror = false,
+  theme: TripTheme = "normal",
 ): Mission {
   const skip = new Set(exclude);
   const nonce = Math.floor(Math.random() * 1e6).toString(36);
   const places = getCityPlaces(cityId);
-  const horrorCands = HORROR_CHALLENGES.map((c) => ({ ...c }));
 
-  if (horror) {
+  if (theme === "horror") {
+    const horrorCands = HORROR_CHALLENGES.map((c) => ({ ...c }));
     const fresh = horrorCands.filter((c) => !skip.has(c.title));
     const pool = fresh.length > 0 ? fresh : horrorCands;
     const base = pool[Math.floor(Math.random() * pool.length)];
@@ -631,18 +719,14 @@ export function spinRoulette(
       description: `${base.description.replace("{place}", place.name)} (${place.tag})`,
     })),
   );
-  const dareCands = DARE_CHALLENGES.map((c) => ({ ...c }));
+  const dareCands = themeDeck(theme).map((c) => ({ ...c }));
 
-  // 덱을 먼저 가중치로 고른 뒤, 그 덱 안에서 뽑는다 (장소 후보가 없으면 그 몫은 병맛 행동으로)
+  // 일반 모드는 괴담을 섞지 않는다: 도시 장소 25% · 병맛 행동 75%
+  // (장소 후보가 없으면 그 몫도 병맛 행동으로)
   const roll = Math.random();
-  const deck =
-    placeCands.length > 0 && roll < 0.25
-      ? placeCands
-      : roll < 0.4
-        ? horrorCands
-        : dareCands;
+  const deck = placeCands.length > 0 && roll < 0.25 ? placeCands : dareCands;
 
-  const all = [...dareCands, ...placeCands, ...horrorCands];
+  const all = [...dareCands, ...placeCands];
   const fresh = deck.filter((c) => !skip.has(c.title));
   const pool = fresh.length > 0 ? fresh : all.filter((c) => !skip.has(c.title));
   const finalPool = pool.length > 0 ? pool : all;

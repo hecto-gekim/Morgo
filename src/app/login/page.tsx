@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter } from "next/navigation";
+import CharacterImage from "@/components/CharacterImage";
 import { useEffect, useState } from "react";
 import { useHydrated, useMorgo } from "@/lib/store";
 
@@ -45,9 +45,9 @@ export default function LoginPage() {
             Morgo<span className="text-3xl">📍</span>
           </h1>
           <p className="mt-1 text-sm font-semibold text-morgo-navy/60">
-            핀 던지면 그냥 가는 거임. 각오하고 들어와
+            다트를 던지면 정해진 곳으로 그냥 출발
           </p>
-          <Image
+          <CharacterImage
             src="/character/hero.png"
             alt="모로고 캐릭터"
             width={230}

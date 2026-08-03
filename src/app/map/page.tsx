@@ -25,7 +25,7 @@ function regionKeyOf(code: string): string {
 function MapContent() {
   const cityRecords = useMorgo((s) => s.cityRecords);
   const trips = useMorgo((s) => s.trips);
-  const horrorMode = useMorgo((s) => s.horrorMode);
+  const horrorMode = useMorgo((s) => s.theme === "horror");
   const regions = useKoreaRegions();
   const [selected, setSelected] = useState<{ code: string; name: string } | null>(
     null,

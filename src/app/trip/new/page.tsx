@@ -5,8 +5,8 @@ import { useState } from "react";
 import AppShell from "@/components/AppShell";
 import Chip from "@/components/Chip";
 import Counter from "@/components/Counter";
-import { getCurrentPosition } from "@/lib/image";
-import { addDays, nearestCityLabel, todayStr } from "@/lib/logic";
+import { resolveCurrentDeparture } from "@/lib/geo";
+import { addDays, todayStr } from "@/lib/logic";
 import { DEPARTURE_PRESETS } from "@/lib/seed";
 import { useMorgo } from "@/lib/store";
 import {
@@ -60,12 +60,7 @@ function Wizard() {
     setGeoError("");
     setLocating(true);
     try {
-      const { latitude, longitude } = await getCurrentPosition();
-      setDeparture({
-        label: nearestCityLabel(latitude, longitude),
-        latitude,
-        longitude,
-      });
+      setDeparture(await resolveCurrentDeparture());
     } catch (e) {
       setGeoError(e instanceof Error ? e.message : "위치를 가져오지 못했어요.");
     } finally {

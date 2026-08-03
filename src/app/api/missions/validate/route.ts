@@ -1,9 +1,11 @@
-// 미션 사진 AI 판정 (Gemini 비전, 명세서 18장 MissionValidator).
+// 미션 사진 AI 판정 — AI별 강점에 맞춘 폴백 체인.
 //
-// GEMINI_API_KEY 가 있으면 Gemini 가 사진이 미션 조건을 만족하는지 판정한다.
-// 없으면 { configured: false } → 클라이언트가 시뮬레이션 판정으로 폴백.
+// 비전 판단은 GPT(gpt-4o)를 1순위로, 없으면 Claude 비전, 그다음 Gemini 비전 순.
+// 셋 다 키가 없으면 { configured:false } → 클라이언트가 시뮬레이션 판정으로 폴백.
 
+import { callClaude } from "@/lib/claude";
 import { callGemini } from "@/lib/gemini";
+import { callOpenAIVision } from "@/lib/openai";
 
 interface ValidateBody {
   image: string; // dataURL (data:image/...;base64,....)
@@ -20,8 +22,10 @@ function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | nul
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return Response.json({ configured: false });
+  const gptKey = process.env.GPT_API_KEY;
+  const claudeKey = process.env.CLAUDE_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!gptKey && !claudeKey && !geminiKey) return Response.json({ configured: false });
 
   let body: ValidateBody;
   try {
@@ -43,25 +47,47 @@ export async function POST(request: Request) {
     `반드시 아래 JSON 형식으로만 답해(다른 문장 없이):\n` +
     `{"match": true 또는 false, "confidence": 0.0~1.0, "reason": "한국어 한 문장"}`;
 
-  const r = await callGemini(
-    apiKey,
-    [
-      { inline_data: { mime_type: parsed.mimeType, data: parsed.data } },
-      { text: prompt },
-    ],
-    // thinking 여유분 포함 (부족하면 판정 JSON 잘림 → 시뮬레이션 폴백)
-    { maxOutputTokens: 1500 },
-  );
-  if (!r.ok) {
-    return Response.json(
-      { error: "upstream_error", status: r.status, detail: r.detail },
-      { status: 502 },
+  // 폴백 체인: GPT 비전 → Claude 비전 → Gemini 비전
+  let text = "";
+  let judge = "";
+  if (gptKey) {
+    const r = await callOpenAIVision(gptKey, body.image, prompt, { maxTokens: 400 });
+    if (r.ok && r.text.trim()) {
+      text = r.text;
+      judge = "gpt";
+    }
+  }
+  if (!text && claudeKey) {
+    const r = await callClaude(claudeKey, prompt, {
+      image: { mediaType: parsed.mimeType, data: parsed.data },
+      maxTokens: 400,
+    });
+    if (r.ok && r.text.trim()) {
+      text = r.text;
+      judge = "claude";
+    }
+  }
+  if (!text && geminiKey) {
+    const r = await callGemini(
+      geminiKey,
+      [
+        { inline_data: { mime_type: parsed.mimeType, data: parsed.data } },
+        { text: prompt },
+      ],
+      { maxOutputTokens: 1500 },
     );
+    if (r.ok && r.text.trim()) {
+      text = r.text;
+      judge = "gemini";
+    }
+  }
+  if (!text) {
+    return Response.json({ error: "upstream_error" }, { status: 502 });
   }
 
-  const jsonMatch = r.text.match(/\{[\s\S]*\}/);
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    return Response.json({ error: "unparseable", raw: r.text.slice(0, 300) }, { status: 502 });
+    return Response.json({ error: "unparseable", raw: text.slice(0, 300) }, { status: 502 });
   }
 
   try {
@@ -75,8 +101,9 @@ export async function POST(request: Request) {
       match: !!verdict.match,
       confidence: Math.max(0, Math.min(1, Number(verdict.confidence) || 0)),
       reason: verdict.reason ?? "",
+      judge,
     });
   } catch {
-    return Response.json({ error: "parse_failed", raw: r.text.slice(0, 300) }, { status: 502 });
+    return Response.json({ error: "parse_failed", raw: text.slice(0, 300) }, { status: 502 });
   }
 }

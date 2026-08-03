@@ -1,13 +1,20 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import CharacterImage from "@/components/CharacterImage";
 import EventBanner from "@/components/EventBanner";
-import RandomTripLauncher from "@/components/RandomTripLauncher";
+import RandomTripLauncher, { LAUNCH_COPY } from "@/components/RandomTripLauncher";
 import { formatDateKo } from "@/lib/logic";
 import { useMorgo } from "@/lib/store";
-import { TRIP_STATUS_LABELS } from "@/lib/types";
+import {
+  THEME_EMOJI,
+  THEME_LABELS,
+  TRIP_STATUS_LABELS,
+  type TripTheme,
+} from "@/lib/types";
+
+const THEMES: TripTheme[] = ["normal", "horror", "parents", "baby"];
 
 export default function HomePage() {
   return (
@@ -20,6 +27,8 @@ export default function HomePage() {
 function HomeContent() {
   const user = useMorgo((s) => s.user)!;
   const trips = useMorgo((s) => s.trips);
+  const theme = useMorgo((s) => s.theme);
+  const setTheme = useMorgo((s) => s.setTheme);
   const activeTrip = trips.find((t) =>
     ["REVEAL_WAITING", "REVEALED", "TRIP_IN_PROGRESS"].includes(t.status),
   );
@@ -32,13 +41,13 @@ function HomeContent() {
             안녕하세요, {user.nickname}님
           </p>
           <h1 className="mt-1 text-2xl font-extrabold leading-snug">
-            이번 주말,
+            오늘,
             <br />
             어디로 <span className="text-morgo-pink">튈지</span> 아무도
             몰라요
           </h1>
         </div>
-        <Image
+        <CharacterImage
           src="/character/wave.png"
           alt="인사하는 모로고"
           width={96}
@@ -64,22 +73,48 @@ function HomeContent() {
           <div className="mt-1 text-sm opacity-80">
             {activeTrip.status === "REVEAL_WAITING"
               ? "목적지는 출발 당일 오전 3시에 공개돼요 →"
-              : "이미 걸렸어요. 도망 못 가요 →"}
+              : "목적지 정해졌어요. 이어서 보기 →"}
           </div>
         </Link>
       )}
 
+      {/* 홈에서 바로 테마 선택 → 아래 버튼으로 목적지 정하기 */}
+      <section className="mt-6">
+        <h2 className="text-sm font-bold text-morgo-navy/70">여행 테마 고르기</h2>
+        <div className="mt-2 grid grid-cols-4 gap-2">
+          {THEMES.map((t) => {
+            const active = theme === t;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTheme(t)}
+                aria-pressed={active}
+                className={`flex flex-col items-center gap-1 rounded-xl px-2 py-3 text-xs font-bold ${
+                  active
+                    ? "bg-morgo-navy text-morgo-yellow"
+                    : "border border-morgo-navy/15 bg-morgo-card text-morgo-navy/70"
+                }`}
+              >
+                <span className="text-xl">{THEME_EMOJI[t]}</span>
+                <span>{THEME_LABELS[t]}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       <RandomTripLauncher>
-        {(open) => (
+        {(open, t) => (
           <button
             type="button"
             onClick={open}
-            className="mt-5 flex w-full items-center justify-between rounded-2xl bg-morgo-navy p-5 text-left text-white shadow-lg shadow-morgo-navy/20 active:bg-morgo-navy-deep"
+            className="mt-3 flex w-full items-center justify-between rounded-2xl bg-morgo-navy p-5 text-left text-white shadow-lg shadow-morgo-navy/20 active:bg-morgo-navy-deep"
           >
             <div>
-              <div className="font-extrabold">🎯 핀 던지고 각오해</div>
+              <div className="font-extrabold">{LAUNCH_COPY[t].cta}</div>
               <div className="mt-0.5 text-sm opacity-80">
-                어디 걸릴지 모름 → 룰렛이 시키는 대로 무조건 실행
+                {LAUNCH_COPY[t].sub}
               </div>
             </div>
             <span className="text-2xl opacity-70">→</span>
@@ -91,10 +126,14 @@ function HomeContent() {
         <h2 className="font-bold">Morgo는 이렇게 굴러가요</h2>
         <ol className="mt-3 space-y-2.5">
           {[
-            "핀을 던지면 그걸로 끝. 도망 못 감",
-            "도착하자마자 AI 룰렛이 미션을 던짐",
-            "사진으로 인증하면 포인트, 못 하면 쫄?",
-            "살아남으면 지도에 전적이 새겨짐",
+            theme === "horror"
+              ? "주술로 소환하면 오늘 끌려갈 곳이 정해져요"
+              : theme === "parents" || theme === "baby"
+                ? "장소를 뽑으면 오늘 갈 곳이 정해져요"
+                : "다트를 던지면 오늘의 목적지가 정해져요",
+            "도착하면 AI 룰렛이 미션을 정해줘요",
+            "미션을 인증하면 포인트가 쌓여요",
+            "다녀온 곳은 지도에 전적으로 남아요",
           ].map((step, i) => (
             <li
               key={step}

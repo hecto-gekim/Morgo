@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import GhostEasterEgg from "@/components/GhostEasterEgg";
 
 export const metadata: Metadata = {
   title: "Morgo — 핀 던지면 그냥 가는 거임",
   description:
-    "지도에 핀 던지고 어디 걸릴지 모른 채 바로 끌려가는 자극적인 랜덤 여행 웹앱",
+    "다트를 던지면 목적지가 정해지고, 룰렛이 정한 미션을 그대로 수행하는 랜덤 여행 웹앱",
 };
 
 export const viewport: Viewport = {
@@ -20,7 +21,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" className="h-full antialiased">
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        {children}
+        <GhostEasterEgg />
+      </body>
     </html>
   );
 }

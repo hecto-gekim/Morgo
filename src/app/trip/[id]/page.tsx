@@ -1,14 +1,15 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import CharacterImage from "@/components/CharacterImage";
 import Countdown from "@/components/Countdown";
 import MissionCard from "@/components/MissionCard";
 import Roulette from "@/components/Roulette";
 import ShareCard from "@/components/ShareCard";
+import InviteFriends from "@/components/InviteFriends";
 import SurpriseMissionPopup from "@/components/SurpriseMissionPopup";
 import { formatDateKo, formatWon } from "@/lib/logic";
 import { RARITY_LABELS } from "@/lib/rarity";
@@ -104,7 +105,8 @@ function TripDetail() {
   if (
     trip.status === "REVEALED" ||
     trip.status === "TRIP_IN_PROGRESS" ||
-    trip.status === "COMPLETED"
+    trip.status === "COMPLETED" ||
+    trip.status === "FAILED"
   ) {
     return <RevealedView trip={trip} />;
   }
@@ -129,7 +131,7 @@ function ResumeCard({
 }) {
   return (
     <div className="mx-auto max-w-xl pt-10 text-center">
-      <Image
+      <CharacterImage
         src="/character/map.png"
         alt="지도를 보는 모로고"
         width={140}
@@ -166,7 +168,7 @@ function WaitingView({
   return (
     <div className="mx-auto max-w-xl">
       <div className="rounded-3xl bg-morgo-navy p-6 text-center text-white shadow-lg shadow-morgo-navy/25">
-        <Image
+        <CharacterImage
           src="/character/wondering.png"
           alt="어디일까 궁금한 모로고"
           width={90}
@@ -239,7 +241,14 @@ function RevealedView({ trip }: { trip: Trip }) {
   const completeTrip = useMorgo((s) => s.completeTrip);
   const addTripMission = useMorgo((s) => s.addTripMission);
   const setTripMissions = useMorgo((s) => s.setTripMissions);
-  const horrorMode = useMorgo((s) => s.horrorMode);
+  const setTripNearby = useMorgo((s) => s.setTripNearby);
+  // 트립 테마는 생성 시점에 고정된 trip.theme으로 판단(전역 토글 아님).
+  // 구버전 여행은 theme이 없으니 horrorSpot 유무로 공포 여부를 유추한다.
+  const tripTheme = trip.theme ?? (trip.horrorSpot ? "horror" : "normal");
+  const isHorror = tripTheme === "horror";
+  // 부모/아이는 장소를 직접 골라 가는 "계획형" 트립 — 랜덤 당첨/공개 연출 대신 목적지 중심으로 보여준다
+  const isPlanned = tripTheme === "parents" || tripTheme === "baby";
+  const themeSpotLabel = tripTheme === "parents" ? "🧡 부모님과 가는 곳" : "🍼 아이와 가는 곳";
   const [showShare, setShowShare] = useState(false);
   const acc = trip.bookedAccommodationId
     ? getAccommodation(trip.bookedAccommodationId)
@@ -252,15 +261,69 @@ function RevealedView({ trip }: { trip: Trip }) {
   useEffect(() => {
     if (hasMissions) return;
     let alive = true;
-    generateStartMissions(trip.cityId, trip.rarity, horrorMode).then(
+    // 미리 정해진 목적지: 공포는 horrorSpot, 부모/아이는 themeSpot
+    const presetSpot = trip.horrorSpot ?? trip.themeSpot;
+    generateStartMissions(trip.cityId, trip.rarity, tripTheme, presetSpot).then(
       ({ missions, spot }) => {
-        if (alive) setTripMissions(trip.id, missions, spot);
+        if (!alive) return;
+        // horrorSpot은 공포 트립에서 AI가 새로 찾은 경우에만 저장.
+        // 부모/아이 themeSpot은 이미 트립에 들어있으므로 덮어쓰지 않는다.
+        setTripMissions(
+          trip.id,
+          missions,
+          tripTheme === "horror" ? spot : undefined,
+        );
       },
     );
     return () => {
       alive = false;
     };
-  }, [trip.id, trip.cityId, trip.rarity, hasMissions, setTripMissions, horrorMode]);
+  }, [
+    trip.id,
+    trip.cityId,
+    trip.rarity,
+    trip.horrorSpot,
+    trip.themeSpot,
+    hasMissions,
+    setTripMissions,
+    tripTheme,
+  ]);
+
+  // 계획형(부모/아이) 트립: 목적지 주변에 갈 만한 추천 장소를 1회 생성해 저장
+  const hasNearby = trip.nearby !== undefined;
+  useEffect(() => {
+    if (!isPlanned || hasNearby || !city) return;
+    let alive = true;
+    fetch("/api/nearby-experiences", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        theme: tripTheme,
+        province: city.provinceName,
+        city: city.name,
+        exclude: trip.themeSpot?.name ?? "",
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (alive)
+          setTripNearby(trip.id, Array.isArray(data?.spots) ? data.spots : []);
+      })
+      .catch(() => {
+        if (alive) setTripNearby(trip.id, []);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [
+    isPlanned,
+    hasNearby,
+    city,
+    tripTheme,
+    trip.id,
+    trip.themeSpot,
+    setTripNearby,
+  ]);
 
   if (!city) {
     return (
@@ -270,38 +333,62 @@ function RevealedView({ trip }: { trip: Trip }) {
     );
   }
 
-  const mapUrl = `https://map.naver.com/p/search/${encodeURIComponent(acc?.name ?? city.name)}`;
+  const mapUrl = `https://map.naver.com/p/search/${encodeURIComponent(
+    isPlanned && trip.themeSpot ? trip.themeSpot.name : (acc?.name ?? city.name),
+  )}`;
   const missions = trip.missions ?? [];
   const passed = missions.filter((m) => m.status === "PASSED");
   const missionDone = passed.length;
   const points = passed.reduce((n, m) => n + (m.earnedPoints ?? m.mission.points), 0);
   const isCompleted = trip.status === "COMPLETED";
+  const isFailed = trip.status === "FAILED";
 
   return (
     <div className="mx-auto max-w-xl">
       <div className="overflow-hidden rounded-3xl bg-morgo-card shadow-lg shadow-morgo-navy/10">
         <div className="grid h-44 w-full place-items-center bg-gradient-to-br from-morgo-navy via-morgo-navy to-morgo-pink text-center">
           <div>
-            {trip.rarity && trip.rarity !== "common" && (
-              <div className="mb-1.5 inline-block rounded-full bg-morgo-yellow px-2.5 py-1 text-xs font-extrabold text-morgo-navy">
-                {RARITY_LABELS[trip.rarity]} 지역
-              </div>
+            {isPlanned && trip.themeSpot ? (
+              <>
+                <div className="text-xs font-bold tracking-wide text-morgo-yellow">
+                  {themeSpotLabel}
+                </div>
+                <div className="mt-1 text-3xl font-extrabold text-white">
+                  📍 {trip.themeSpot.name}
+                </div>
+                <div className="mt-1 text-sm text-white/70">{cityLabel(city)}</div>
+              </>
+            ) : (
+              <>
+                {trip.rarity && trip.rarity !== "common" && (
+                  <div className="mb-1.5 inline-block rounded-full bg-morgo-yellow px-2.5 py-1 text-xs font-extrabold text-morgo-navy">
+                    {RARITY_LABELS[trip.rarity]} 지역
+                  </div>
+                )}
+                <div className="text-xs font-bold tracking-wide text-morgo-yellow">
+                  🎯 당첨
+                </div>
+                <div className="mt-1 text-3xl font-extrabold text-white">
+                  {cityLabel(city)}
+                </div>
+              </>
             )}
-            <div className="text-xs font-bold tracking-wide text-morgo-yellow">
-              🎯 당첨
-            </div>
-            <div className="mt-1 text-3xl font-extrabold text-white">
-              {cityLabel(city)}
-            </div>
           </div>
         </div>
         <div className="p-5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-bold text-morgo-pink">
-                🎊 목적지가 공개되었어요!
+                {isPlanned ? "오늘 여기로 떠나요" : "🎊 목적지가 공개되었어요!"}
               </p>
-              <h1 className="mt-1 text-2xl font-extrabold">{cityLabel(city)}</h1>
+              <h1 className="mt-1 text-2xl font-extrabold">
+                {isPlanned && trip.themeSpot ? trip.themeSpot.name : cityLabel(city)}
+              </h1>
+              {isPlanned && trip.themeSpot && (
+                <p className="mt-1 text-sm leading-relaxed text-morgo-navy/60">
+                  {trip.themeSpot.description}
+                </p>
+              )}
               {acc && (
                 <>
                   <p className="mt-1 font-semibold text-morgo-navy/80">{acc.name}</p>
@@ -309,7 +396,7 @@ function RevealedView({ trip }: { trip: Trip }) {
                 </>
               )}
             </div>
-            <Image
+            <CharacterImage
               src="/character/luggage.png"
               alt="떠나는 모로고"
               width={92}
@@ -349,35 +436,45 @@ function RevealedView({ trip }: { trip: Trip }) {
             rel="noreferrer"
             className="mt-5 block min-h-[48px] content-center rounded-xl bg-morgo-navy text-center font-bold text-white"
           >
-            🗺️ 네이버 지도에서 보기
+            {isPlanned ? "🗺️ 네이버 지도에서 길찾기" : "🗺️ 네이버 지도에서 보기"}
           </a>
         </div>
       </div>
 
-      <section className="mt-4">
-        <Roulette
-          cityId={trip.cityId}
-          excludeTitles={missions.map((m) => m.mission.title)}
-          onAccept={(m) => addTripMission(trip.id, m)}
-        />
-      </section>
+      {/* 실패로 끝난 여행에는 새 미션을 더 받을 수 없다 */}
+      {!isFailed && (
+        <section className="mt-4">
+          <Roulette
+            cityId={trip.cityId}
+            excludeTitles={missions.map((m) => m.mission.title)}
+            theme={tripTheme}
+            onAccept={(m) => addTripMission(trip.id, m)}
+          />
+        </section>
+      )}
 
-      {horrorMode ? (
+      <InviteFriends trip={trip} />
+
+      {isHorror ? (
         trip.horrorSpot && (
           <section className="mt-4 rounded-2xl bg-morgo-navy p-5 text-white shadow-sm">
             <div className="flex items-center justify-between">
-              <h2 className="font-bold text-morgo-yellow">이 도시의 공포 명소</h2>
+              <h2 className="font-bold text-morgo-yellow">오늘의 공포 목적지</h2>
               <span className="rounded-full bg-morgo-pink px-2.5 py-1 text-[11px] font-bold text-white">
-                👻 실화
+                ☠️ 필수 방문
               </span>
             </div>
             <div className="mt-3 rounded-xl bg-white/10 p-3">
-              <div className="text-[11px] text-white/50">추천 장소</div>
+              <div className="text-[11px] text-white/50">반드시 다녀올 곳</div>
               <div className="mt-0.5 font-semibold">🕯️ {trip.horrorSpot.name}</div>
               <p className="mt-2 text-sm leading-relaxed text-white/75">
                 {trip.horrorSpot.description}
               </p>
             </div>
+            <p className="mt-3 text-[11px] leading-relaxed text-white/45">
+              ⚠️ 건물·시설 안에는 절대 들어가지 마세요. 무단진입·폐가 내부는 금지이며,
+              밝은 도로변 등 바깥 공개된 곳에서만 인증하세요.
+            </p>
           </section>
         )
       ) : (
@@ -405,11 +502,47 @@ function RevealedView({ trip }: { trip: Trip }) {
         )
       )}
 
+      {/* 계획형(부모/아이): 목적지 주변에 갈 만한 추천 장소 */}
+      {isPlanned && trip.nearby && trip.nearby.length > 0 && (
+        <section className="mt-4 rounded-2xl bg-morgo-card p-5 shadow-sm">
+          <h2 className="font-bold">
+            {tripTheme === "baby" ? "🎠 주변 아이 체험 장소" : "🍵 주변 가볼 곳"}
+          </h2>
+          <p className="mt-0.5 text-xs text-morgo-navy/50">
+            목적지 근처에서 이어서 즐겨보세요.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {trip.nearby.map((s, i) => (
+              <li key={`${s.name}-${i}`}>
+                <a
+                  href={`https://map.naver.com/p/search/${encodeURIComponent(s.name)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-start gap-2 rounded-xl bg-morgo-cream p-3 active:bg-morgo-yellow-soft"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold">📍 {s.name}</div>
+                    {s.description && (
+                      <p className="mt-0.5 text-sm leading-relaxed text-morgo-navy/60">
+                        {s.description}
+                      </p>
+                    )}
+                  </div>
+                  <span className="shrink-0 text-morgo-navy/40">🗺️</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="mt-6">
         {missions.length > 0 ? (
           <>
             <div className="flex items-center justify-between">
-              <h2 className="font-bold">📸 미션 & 룰렛 도전</h2>
+              <h2 className="font-bold">
+                {isPlanned ? "📸 함께할 미션" : "📸 미션 & 룰렛 도전"}
+              </h2>
               <span className="text-sm font-semibold text-morgo-pink">
                 {missionDone}/{missions.length} 성공 · {points}P
               </span>
@@ -419,7 +552,12 @@ function RevealedView({ trip }: { trip: Trip }) {
             </p>
             <div className="mt-3 space-y-2.5">
               {missions.map((m) => (
-                <MissionCard key={m.mission.id} tripId={trip.id} tm={m} />
+                <MissionCard
+                  key={m.mission.id}
+                  tripId={trip.id}
+                  tm={m}
+                  locked={isFailed}
+                />
               ))}
             </div>
             {missionDone > 0 && (
@@ -434,7 +572,7 @@ function RevealedView({ trip }: { trip: Trip }) {
           </>
         ) : (
           <div className="rounded-2xl bg-morgo-navy p-5 text-center text-sm font-semibold text-morgo-yellow shadow-sm">
-            🎯 AI가 미션 뽑는 중… 각오해
+            🎯 AI가 미션 정하는 중…
           </div>
         )}
       </section>
@@ -449,9 +587,11 @@ function RevealedView({ trip }: { trip: Trip }) {
         />
       )}
 
-      {(trip.status === "REVEALED" || trip.status === "TRIP_IN_PROGRESS") && (
-        <SurpriseMissionPopup tripId={trip.id} />
-      )}
+      {/* 깜짝 미션(강압 톤)은 랜덤/공포 트립에서만. 부모·아이 계획형 여행에는 띄우지 않는다 */}
+      {!isPlanned &&
+        (trip.status === "REVEALED" || trip.status === "TRIP_IN_PROGRESS") && (
+          <SurpriseMissionPopup tripId={trip.id} horror={isHorror} />
+        )}
 
       {acc && (
         <div className="mt-4 rounded-xl bg-morgo-yellow-soft px-4 py-3 text-xs leading-relaxed text-morgo-navy/75">
@@ -474,6 +614,19 @@ function RevealedView({ trip }: { trip: Trip }) {
           >
             🗺️ 지도에서 보고 사진 남기기
           </Link>
+        </div>
+      ) : isFailed ? (
+        <div className="mt-4 rounded-2xl bg-morgo-navy p-5 text-center text-white">
+          <div className="text-lg font-extrabold">😵 실패한 여행이에요</div>
+          <p className="mt-1 text-sm text-white/65">
+            여행 날짜가 지났는데 미션을 다 못 끝냈어요 ({missionDone}/
+            {missions.length} 성공). 방문 지도에는 기록되지 않아요.
+          </p>
+          {points > 0 && (
+            <p className="mt-1 text-xs text-morgo-yellow">
+              그래도 성공한 미션의 {points}P는 그대로 가져가요.
+            </p>
+          )}
         </div>
       ) : (
         <button

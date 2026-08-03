@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import CharacterImage from "@/components/CharacterImage";
 import MissionCard from "@/components/MissionCard";
-import RandomTripLauncher from "@/components/RandomTripLauncher";
+import RandomTripLauncher, { LAUNCH_COPY } from "@/components/RandomTripLauncher";
 import { formatDateKo, totalEarnedPoints } from "@/lib/logic";
 import { getCity } from "@/lib/seed";
 import { useMorgo } from "@/lib/store";
@@ -18,7 +18,7 @@ export default function MissionsPage() {
   );
 }
 
-const MISSION_STATUSES = ["REVEALED", "TRIP_IN_PROGRESS", "COMPLETED"];
+const MISSION_STATUSES = ["REVEALED", "TRIP_IN_PROGRESS", "COMPLETED", "FAILED"];
 
 function badgeOf(points: number): { emoji: string; name: string; next?: number } {
   if (points >= 300) return { emoji: "👑", name: "여행의 달인" };
@@ -30,6 +30,7 @@ function badgeOf(points: number): { emoji: string; name: string; next?: number }
 
 function MissionsContent() {
   const trips = useMorgo((s) => s.trips);
+  const horrorMode = useMorgo((s) => s.theme === "horror");
 
   // 미션이 배정된(공개 이후) 모든 여행 — 여행별로 볼 수 있게 그룹화
   const missionTrips = trips.filter(
@@ -47,26 +48,52 @@ function MissionsContent() {
     <div>
       <h1 className="text-xl font-extrabold">여행 미션</h1>
 
-      {/* 포인트 · 배지 요약 */}
-      <div className="mt-4 flex items-center gap-4 rounded-2xl bg-morgo-navy p-5 text-white shadow-lg shadow-morgo-navy/20">
-        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/10 text-3xl">
+      {/* 포인트 · 배지 요약 — 공포만 다크 톤, 나머지는 밝은 민트 톤(검정+빨강 무서움 제거) */}
+      <div
+        className={`mt-4 flex items-center gap-4 rounded-2xl p-5 ${
+          horrorMode
+            ? "bg-morgo-navy text-white shadow-lg shadow-morgo-navy/20"
+            : "bg-morgo-mint-soft text-morgo-navy shadow-sm"
+        }`}
+      >
+        <div
+          className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-3xl ${
+            horrorMode ? "bg-white/10" : "bg-morgo-card"
+          }`}
+        >
           {badge.emoji}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-sm text-morgo-yellow">{badge.name}</div>
+          <div
+            className={`text-sm font-semibold ${
+              horrorMode ? "text-morgo-yellow" : "text-morgo-mint"
+            }`}
+          >
+            {badge.name}
+          </div>
           <div className="text-2xl font-extrabold">
             {points}
             <span className="ml-1 text-sm font-normal opacity-70">P</span>
           </div>
           {badge.next && (
             <div className="mt-1.5">
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/15">
+              <div
+                className={`h-1.5 w-full overflow-hidden rounded-full ${
+                  horrorMode ? "bg-white/15" : "bg-morgo-navy/10"
+                }`}
+              >
                 <div
-                  className="h-full rounded-full bg-morgo-yellow"
+                  className={`h-full rounded-full ${
+                    horrorMode ? "bg-morgo-yellow" : "bg-morgo-mint"
+                  }`}
                   style={{ width: `${Math.min(100, (points / badge.next) * 100)}%` }}
                 />
               </div>
-              <div className="mt-1 text-[11px] opacity-70">
+              <div
+                className={`mt-1 text-[11px] ${
+                  horrorMode ? "opacity-70" : "text-morgo-navy/55"
+                }`}
+              >
                 다음 배지까지 {badge.next - points}P · 미션 {passedCount}개 성공
               </div>
             </div>
@@ -98,16 +125,20 @@ function MissionsContent() {
         <EmptyState
           image="/character/camera.png"
           title="미션 하나도 안 깬 거 실화냐"
-          desc="핀 던지면 바로 AI가 미션을 던져요. 도망갈 곳 없음."
+          desc={
+            horrorMode
+              ? "주술로 소환하면 AI가 그곳의 공포 미션을 정해줘요. 시키는 대로 버텨내요!"
+              : "핀을 던지면 AI가 미션을 정해줘요. 시키는 대로 클리어!"
+          }
           action={
             <RandomTripLauncher>
-              {(open) => (
+              {(open, t) => (
                 <button
                   type="button"
                   onClick={open}
                   className="mt-5 inline-block rounded-xl bg-morgo-navy px-6 py-3 font-bold text-white"
                 >
-                  🎯 핀 던지러 가기
+                  {LAUNCH_COPY[t].short}
                 </button>
               )}
             </RandomTripLauncher>
@@ -133,6 +164,7 @@ function TripMissions({ trip }: { trip: Trip }) {
           <p className="text-xs text-morgo-navy/45">
             {formatDateKo(trip.conditions.checkInDate)} 여행
             {trip.status === "COMPLETED" && " · 완료"}
+            {trip.status === "FAILED" && " · 실패"}
           </p>
         </div>
         <span className="rounded-full bg-morgo-pink-soft px-2.5 py-1 text-xs font-bold text-morgo-navy">
@@ -141,7 +173,12 @@ function TripMissions({ trip }: { trip: Trip }) {
       </div>
       <div className="mt-3 space-y-2.5">
         {missions.map((m) => (
-          <MissionCard key={m.mission.id} tripId={trip.id} tm={m} />
+          <MissionCard
+            key={m.mission.id}
+            tripId={trip.id}
+            tm={m}
+            locked={trip.status === "FAILED"}
+          />
         ))}
       </div>
     </section>
@@ -161,7 +198,7 @@ function EmptyState({
 }) {
   return (
     <div className="mt-12 text-center text-morgo-navy/55">
-      <Image
+      <CharacterImage
         src={image}
         alt=""
         width={120}

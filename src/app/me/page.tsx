@@ -1,8 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import CharacterImage from "@/components/CharacterImage";
 import { totalEarnedPoints } from "@/lib/logic";
 import { useMorgo } from "@/lib/store";
 
@@ -20,8 +20,6 @@ function MeContent() {
   const trips = useMorgo((s) => s.trips);
   const cityRecords = useMorgo((s) => s.cityRecords);
   const logout = useMorgo((s) => s.logout);
-  const horrorMode = useMorgo((s) => s.horrorMode);
-  const toggleHorrorMode = useMorgo((s) => s.toggleHorrorMode);
 
   const visitedCount = Object.keys(cityRecords).length;
   const points = totalEarnedPoints(trips);
@@ -30,7 +28,7 @@ function MeContent() {
     <div>
       <h1 className="text-xl font-extrabold">마이</h1>
       <div className="mt-4 flex items-center gap-4 rounded-2xl bg-morgo-card p-5 shadow-sm">
-        <Image
+        <CharacterImage
           src="/character/happy.png"
           alt="프로필 캐릭터"
           width={56}
@@ -65,18 +63,6 @@ function MeContent() {
         <MeStat value={`${points}P`} label="미션 포인트" />
       </div>
 
-      <button
-        type="button"
-        onClick={toggleHorrorMode}
-        className={`mt-6 flex w-full items-center justify-between rounded-xl px-4 py-3.5 font-bold ${
-          horrorMode
-            ? "bg-morgo-navy text-morgo-yellow"
-            : "border border-morgo-navy/15 bg-morgo-card text-morgo-navy/70"
-        }`}
-      >
-        <span>😱 공포 모드</span>
-        <span className="text-sm font-semibold">{horrorMode ? "ON · 끄기" : "OFF · 켜기"}</span>
-      </button>
 
       <button
         type="button"

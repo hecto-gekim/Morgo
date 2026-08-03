@@ -1,9 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import CharacterImage from "@/components/CharacterImage";
 import { formatDateKo } from "@/lib/logic";
 import { useMorgo } from "@/lib/store";
 
@@ -29,7 +29,7 @@ function CompleteContent() {
 
   return (
     <div className="mx-auto max-w-xl text-center">
-      <Image
+      <CharacterImage
         src="/character/thrilled.png"
         alt="두근두근한 모로고"
         width={130}

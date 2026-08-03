@@ -13,9 +13,12 @@ import { MISSION_CATEGORY_LABELS, type TripMission } from "@/lib/types";
 export default function MissionCard({
   tripId,
   tm,
+  locked = false,
 }: {
   tripId: string;
   tm: TripMission;
+  /** 여행이 끝나(실패) 더는 도전할 수 없는 상태 — 제출 버튼 숨김 */
+  locked?: boolean;
 }) {
   const submitMission = useMorgo((s) => s.submitMission);
   const resolveMission = useMorgo((s) => s.resolveMission);
@@ -86,6 +89,10 @@ export default function MissionCard({
             <span className="h-3 w-3 animate-spin rounded-full border-2 border-morgo-navy/20 border-t-morgo-navy" />
             AI가 사진을 판정하고 있어요…
           </div>
+        ) : locked ? (
+          <p className="text-xs font-semibold text-morgo-navy/45">
+            ⏰ 여행이 끝나 더는 도전할 수 없어요
+          </p>
         ) : (
           <>
             {status === "FAILED" && (
